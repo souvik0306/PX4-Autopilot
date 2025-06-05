@@ -17,7 +17,7 @@ VALID_FIELDS = { #Note, also have to add the message types as those can be field
     'uint32'
 }
 
-ALLOWED_UNITS = set(["m", "m/s", "rad", "rad/s", "rpm" ,"V", "A", "W", "dBm", "s", "ms", "us", "Ohm", "MB", "Kb/s"])
+ALLOWED_UNITS = set(["m", "m/s", "rad", "rad/s", "rpm" ,"V", "A", "mA", "mAh", "W", "dBm", "s", "ms", "us", "Ohm", "MB", "Kb/s"])
 invalid_units = set()
 
 class Enum:
@@ -73,13 +73,12 @@ class MessageField:
                     # Create parent enum objects
                     for enumName in self.enums:
                         if not enumName in parentMessage.enums:
-                            print(f"debug check for enumname {parentMessage.name}")
                             parentMessage.enums[enumName]=Enum(enumName,parentMessage)
 
                 elif item.startswith('@range'):
-                    item = item[:6].split(",")
-                    self.minValue = item[0]
-                    self.maxValue = item[1]
+                    item = item[6:].strip().split(",")
+                    self.minValue = item[0].strip()
+                    self.maxValue = item[1].strip()
                 elif item.startswith('@invalid'):
                     self.invalidValue = item[8:].strip()
                 else:
@@ -89,7 +88,6 @@ class MessageField:
     def display_info(self):
         print(f"Debug: MessageField: display_info")
         print(f" name: {self.name}, type: {self.type}, description: {self.description}, enums: {self.enums}, minValue: {self.minValue}, maxValue: {self.maxValue}, invalidValue: {self.invalidValue}")
-
 
 class EnumValue:
     def __init__(self, name, type, value, comment, line_number):
@@ -121,8 +119,92 @@ class UORBMessage:
         self.fields = []
         self.enumValues = dict()
         self.enums = dict()
+        self.output_file = os.path.join(output_dir, f"{self.name}.md")
 
         self.parseFile()
+
+
+    def markdown_out(self):
+        #print(f"Debug: UORBMessage: markdown_out()")
+
+        markdown = f"# {self.name} (UORB message)\n\n"
+        markdown += f"[source file](https://github.com/PX4/PX4-Autopilot/blob/main/msg/{self.filename})\n\n"
+
+        ## Append description info if present
+        markdown += f"{self.shortDescription}\n\n" if self.shortDescription else ""
+        markdown += f"{self.longDescription}\n\n" if self.longDescription else ""
+
+        # Generate field docs
+        markdown += f"## Fields\n\n"
+        markdown += "Name (type) | Units | Values | Description | invalid\n"
+        markdown += "--- | --- | --- | --- | ---\n"
+        for field in self.fields:
+            unit = f" {field.unit} " if field.unit else " "
+            value = " "
+            if field.enums:
+                value = ""
+                for enum in field.enums:
+                    value += f"[{enum}](#{enum}) "
+                value = value.strip()
+                value = f" {value} "
+            elif field.minValue and field.maxValue:
+                value = f" range: {field.minValue} - {field.maxValue} "
+            elif field.minValue:
+                value = f" min: {field.minValue} "
+            elif field.maxValue:
+                value = f" max: {field.maxValue} "
+            description = f" {field.description} " if field.description else " "
+            invalid = f" {field.invalidValue} " if field.invalidValue else " "
+
+            markdown += f"{field.name} (`{field.type}`) |{unit}|{value}|{description}|{invalid}\n"
+
+        # Generate enum docs
+        if len(self.enums) > 0:
+            markdown += f"\n## Enums\n"
+
+            for name, enum in self.enums.items():
+                markdown += f"\n### {name} {{#{name}}}\n\n"
+
+                markdown += "Name (type) | Value | Description\n"
+                markdown += "--- | --- | ---\n"
+
+                for enumValueName, enumValue in enum.enumValues.items():
+                    description = f" {enumValue.comment} " if enumValue.comment else " "
+                    markdown += f"{enumValueName} (`{enumValue.type}`) | {enumValue.value} |{description}\n"
+
+        # Generate table for constants docs
+        if len(self.enumValues) > 0:
+            markdown += f"\n## Constants\n\n"
+            markdown += "Name (type) | Value | Description\n"
+            markdown += "--- | --- | ---\n"
+            for name, enum in self.enumValues.items():
+                description = f" {enum.comment} " if enum.comment else " "
+                markdown += f'<a href="#{name}">{name} (`{enum.type}`) | {enum.value} |{description}\n'
+
+        # Append msg contents to the end
+        with open(self.msg_filename, 'r') as source_file:
+            msg_contents = source_file.read()
+            msg_contents = msg_contents.strip()
+
+        #Format markdown using msg name, comment, url, contents.
+        markdown += f"""
+
+## Source
+
+::: details Click here to see original file
+```c
+{msg_contents}
+```
+:::
+
+"""
+
+        with open(self.output_file, 'w') as content_file:
+            content_file.write(markdown)
+
+        #exit()
+
+
 
     def display_info(self):
         print(f"UORBMessage: display_info")
@@ -239,16 +321,11 @@ class UORBMessage:
                     self.longDescription += f"{summaryline}\n"
 
             else:
-                print("No summary")
+                print("WARNING: No summary")
             if self.longDescription:
                 self.longDescription.strip()
 
-            # TODO Parse our enumvalues into enums
-            #
-
-            #self.enumValues = dict()
-            #self.enums = dict()
-            #enumValueOriginalNumber = len(self.enumValues)
+            # TODO Parse our enumvalues into enums, leaving only constants
             enumValuesToRemove = []
             for enumName, enumObject in self.enums.items():
                 #print(f"enum enumName key: {enumName}")
@@ -266,9 +343,7 @@ class UORBMessage:
                 print(f"Debug: WARNING unassignedEnumValues: {unassignedEnumValues}")
                 # TODO Attempt to work out name of enum and report error.
 
-            self.display_info()
-
-
+            #self.display_info()
 
 
 import yaml
@@ -388,15 +463,37 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Generate docs from .msg files')
     parser.add_argument('-d', dest='dir', help='output directory', required=True)
+    parser.add_argument('-m', dest='messages', help='Message names, space separated, to run on specific messages')
     args = parser.parse_args()
 
     output_dir = args.dir
     if not os.path.isdir(output_dir):
+        print(f"making output_dir {output_dir}")
         os.mkdir(output_dir)
 
     msg_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../msg")
     msg_files = get_msgs_list(msg_path)
+
+    if args.messages:
+        messageListToParse = args.messages.split(" ")
+        print(messageListToParse)
+        allFoundMessageNames = []
+
+        for message in messageListToParse:
+            messageFound = False
+            for item in msg_files:
+                if message in item:
+                    allFoundMessageNames.append(item)
+                    messageFound = True
+                    continue
+            if not messageFound:
+                print(f"EXIT: Message not found: {message}")
+                exit()
+        print(f"Parsing: {allFoundMessageNames}")
+        msg_files = allFoundMessageNames
+
     msg_files.sort()
+
 
     versioned_msgs_list = ''
     unversioned_msgs_list = ''
@@ -412,78 +509,22 @@ if __name__ == "__main__":
 
     for msg_file in msg_files:
         message = UORBMessage(msg_file)
-        message.display_info()
-        print(invalid_units)
-
-        print(f"msg_file: {msg_file}")
-        msg_name = os.path.splitext(os.path.basename(msg_file))[0]
-        print(f"msg_name: {msg_name}")
-        output_file = os.path.join(output_dir, msg_name+'.md')
-        print(f"output_file: {output_file}")
-        msg_filename = os.path.join(msg_path, msg_file)
-        print(f"msg_filename: {msg_filename}")
-        print("{:} -> {:}".format(msg_filename, output_file))
-
-        #Format msg url
-        msg_url="[source file](https://github.com/PX4/PX4-Autopilot/blob/main/msg/%s)" % msg_file
-        print(f"msg_url: {msg_url}")
-        continue
-
-        msg_description = ""
-        summary_description = ""
-
-        #Get msg description (first non-empty comment line from top of msg)
-        with open(msg_filename, 'r') as lineparser:
-            line = lineparser.readline()
-            while line.startswith('#') or (line.strip() == ''):
-                print('DEBUG: line: %s' % line)
-                line=line[1:].strip()+'\n'
-                stripped_line=line.strip()
-                if msg_description and not summary_description and stripped_line=='':
-                    summary_description = msg_description.strip()
-
-                msg_description+=line
-                line = lineparser.readline()
-            msg_description=msg_description.strip()
-            if not summary_description and msg_description:
-                summary_description = msg_description
-            print('msg_description: Z%sZ' % msg_description)
-            print('summary_description: Z%sZ' % summary_description)
-            summary_description
-        msg_contents = ""
-        #Get msg contents (read the file)
-        with open(msg_filename, 'r') as source_file:
-            msg_contents = source_file.read()
-
-        #Format markdown using msg name, comment, url, contents.
-        markdown_output="""# %s (UORB message)
-
-%s
-
-%s
-
-```c
-%s
-```
-""" % (msg_name, msg_description, msg_url, msg_contents)
-
-        with open(output_file, 'w') as content_file:
-            content_file.write(markdown_output)
+        # Any additional tests that can't be in UORBMessage parser go here.
+        message.markdown_out()
 
         # Categorize as versioned or unversioned
         if "versioned" in msg_file:
-            versioned_msgs_list += '- [%s](%s.md)' % (msg_name, msg_name)
-            if summary_description:
-                versioned_msgs_list += " — %s" % summary_description
+            versioned_msgs_list += f"- [{message.name}]({message.name}.md)"
+            if message.shortDescription:
+                versioned_msgs_list += f" — {message.shortDescription}"
             versioned_msgs_list += "\n"
         else:
-            unversioned_msgs_list += '- [%s](%s.md)' % (msg_name, msg_name)
-            if summary_description:
-                unversioned_msgs_list += " — %s" % summary_description
+            unversioned_msgs_list += f"- [{message.name}]({message.name}.md)"
+            if message.shortDescription:
+                unversioned_msgs_list += f" — {message.shortDescription}"
             unversioned_msgs_list += "\n"
-
     # Write out the index.md file
-    index_text="""# uORB Message Reference
+    index_text=f"""# uORB Message Reference
 
 ::: info
 This list is [auto-generated](https://github.com/PX4/PX4-Autopilot/blob/main/Tools/msg/generate_msg_docs.py) from the source code.
@@ -498,12 +539,12 @@ Graphs showing how these are used [can be found here](../middleware/uorb_graph.m
 
 ## Versioned Messages
 
-%s
+{versioned_msgs_list}
 
 ## Unversioned Messages
 
-%s
-    """ % (versioned_msgs_list, unversioned_msgs_list)
+{unversioned_msgs_list}
+    """
     index_file = os.path.join(output_dir, 'index.md')
     with open(index_file, 'w') as content_file:
             content_file.write(index_text)
