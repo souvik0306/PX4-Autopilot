@@ -300,6 +300,7 @@ class UORBMessage:
                         else:
                             print(f"{self.filename}: Internal comment: [{line_number}]\n {line}")
                             # TODO report error?
+                            # TODO handle topics.
                         continue
                     else:
                         #print(f"Field? {stripped_line}")
