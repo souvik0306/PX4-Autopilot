@@ -331,6 +331,7 @@ class UORBMessage:
                 # Or perhaps we just fix it on request
 
                 if not found_first_relevant_content and not stripped_line:
+                    #print(f"DEBUG: found_first_relevant_content (false): comment line: {stripped_line}")
                     continue
                 if not found_first_relevant_content and stripped_line:
                     found_first_relevant_content = True
@@ -343,7 +344,7 @@ class UORBMessage:
 
                 if gettingInitialComments and stripped_line.startswith("#"):
                     stripped_line=stripped_line[1:].strip()
-                    #print(f"comment line: {stripped_line}")
+                    #print(f"DEBUG: gettingInitialComments: comment line: {stripped_line}")
                     initial_block_lines.append(stripped_line)
                 else:
                     gettingInitialComments = False
@@ -400,7 +401,7 @@ class UORBMessage:
                     error = Error("topic_error", self.filename, "", f"NOTE: TOPIC - Default topic {defaultTopic} for {self.name} not in {self.topics}")
 
             # Parse our short and long description
-            #print(f"TODO: initial_block_lines: {initial_block_lines}")
+            #print(f"DEBUG: initial_block_lines: {initial_block_lines}")
             doingLongDescription = False
             for summaryline in initial_block_lines:
                 if not self.shortDescription and summaryline.strip() == '':
@@ -414,15 +415,16 @@ class UORBMessage:
                 if doingLongDescription:
                     self.longDescription += f"{summaryline}\n"
 
-            else:
+            if self.longDescription:
+                self.longDescription.strip()
+
+            if not self.shortDescription:
                 # Summary has not been defined
                 error = Error("summary_missing", self.filename)
                 if not "summary_missing" in self.errors:
                     self.errors["summary_missing"] = []
                 self.errors["summary_missing"].append(error)
 
-            if self.longDescription:
-                self.longDescription.strip()
 
             # TODO Parse our enumvalues into enums, leaving only constants
             enumValuesToRemove = []
