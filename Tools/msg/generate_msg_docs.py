@@ -409,6 +409,8 @@ class UORBMessage:
                 if not doingLongDescription and not summaryline.strip() == '':
                    self.shortDescription += f" {summaryline}"
                    self.shortDescription = self.shortDescription.strip()
+                   if not self.shortDescription[-1:] == ".": # Add terminating fullstop if not present.
+                       self.shortDescription += "."
                 if not doingLongDescription and summaryline.strip() == '':
                    doingLongDescription = True
                    continue
