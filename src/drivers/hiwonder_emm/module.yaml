@@ -1,0 +1,11 @@
+module_name: Hiwonder EMM Driver
+actuator_output:
+  output_groups:
+    - param_prefix: EMM
+      channel_label: 'Channel'
+      standard_params:
+        disarmed: { min: 128, max: 128, default: 128 }
+        min: { min: 1, max: 128, default: 1 }
+        max: { min: 128, max: 256, default: 256 }
+        failsafe: { min: 0, max: 257 }
+      num_channels: 4
