@@ -1,4 +1,5 @@
 module_name: Hiwonder EMM Driver
+
 actuator_output:
   output_groups:
     - param_prefix: EMM
@@ -9,3 +10,17 @@ actuator_output:
         max: { min: 128, max: 256, default: 256 }
         failsafe: { min: 0, max: 257 }
       num_channels: 4
+
+parameters:
+  - group: Actuator Outputs
+    definitions:
+      HIWONDER_EN:
+        description:
+          short: Enable the Hiwonder EMM output driver
+          long: |
+            Enable the Hiwonder EMM output driver.
+            The integer refers to the I2C bus number where Hiwonder EMM is connected.
+        type: int32
+        min: 0
+        max: 10
+        default: 0

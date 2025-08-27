@@ -48,16 +48,24 @@ int HiwonderEMM::init()
 
 	if (ret != PX4_OK) { return ret; }
 
+	const uint8_t cmd[2] = {MOTOR_TYPE_ADDR, MOTOR_TYPE_JGB37_520_12V_110RPM};
+	int motor_type = transfer(cmd, 2, nullptr, 0);
+	const uint8_t cmd2[2] = {MOTOR_ENCODER_POLARITY_ADDR, 0};
+	int encoder_polarity = transfer(cmd2, 2, nullptr, 0);
+
 	// uint8_t buf[2] = {};
 
 	// buf[0] = HiwonderEMM_REG_MODE1;
 	// buf[1] = HiwonderEMM_DEFAULT_MODE1_CFG | HiwonderEMM_MODE1_SLEEP_MASK;  // put into sleep mode
 	// ret = transfer(buf, 2, nullptr, 0);
 
-	// if (OK != ret) {
-	// 	PX4_ERR("init: i2c::transfer returned %d", ret);
-	// 	return ret;
-	// }
+	if (motor_type != PX4_OK || encoder_polarity != PX4_OK) {
+		PX4_ERR("Hiwonder EMM initialization failed");
+		return PX4_ERROR;
+
+	} else {
+		PX4_INFO("Hiwonder EMM initialized");
+	}
 
 	return PX4_OK;
 }
@@ -68,7 +76,30 @@ int HiwonderEMM::probe()
 
 	if (ret != PX4_OK) { return ret; }
 
-	// uint8_t buf[2] = {0x00};
-	// return transfer(buf, 2, buf, 1);
-	return PX4_OK;
+	uint8_t cmd = MOTOR_TYPE_ADDR;
+	const int ret2 = transfer(&cmd, 1, nullptr, 0);
+
+	if (ret2 != PX4_OK) {
+		PX4_ERR("probe: i2c::transfer returned %d", ret);
+
+	} else {
+		PX4_INFO("HiwonderEMM found");
+	}
+
+	return ret2;
+	// return PX4_OK;
+}
+
+int HiwonderEMM::read_adc()
+{
+	const uint8_t cmd = ADC_BAT_ADDR;
+	uint8_t buf[2] = {};
+	const int ret = transfer(&cmd, 1, buf, 2);
+
+	if (ret != PX4_OK) {
+		PX4_ERR("read_adc failed");
+		return ret;
+	}
+
+	return (buf[0] << 8) | buf[1];
 }

@@ -37,6 +37,7 @@ px4_add_module(
 	SRCS
 		main.cpp
 		HiwonderEMM.cpp
+		HiwonderEMM.h
 	MODULE_CONFIG
 		module.yaml
 	DEPENDS

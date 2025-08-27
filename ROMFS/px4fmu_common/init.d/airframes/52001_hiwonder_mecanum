@@ -1,0 +1,11 @@
+#!/bin/sh
+#
+# @name Hiwonder Mecanum
+#
+# @type Rover
+# @class Rover
+#
+
+. ${R}etc/init.d/rc.rover_mecanum_defaults
+
+param set-default HIWONDER_EN 1

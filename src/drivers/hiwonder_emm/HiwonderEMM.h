@@ -58,6 +58,8 @@ public:
 
 	int init() override;
 
+	int read_adc();
+
 protected:
 	int probe() override;
 

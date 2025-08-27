@@ -49,6 +49,11 @@ then
 	fi
 fi
 
+if param greater HIWONDER_EN 0
+then
+	hiwonder_emm start
+fi
+
 if ver hwbasecmp 008 009 00a 010 011
 then
 	#SKYNODE base fmu board orientation

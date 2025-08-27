@@ -86,10 +86,10 @@ private:
 	HiwonderEMM *hiwonderemm = nullptr;
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
 	MixingOutput _mixing_output {
-		"HiwonderEMM",
+		"EMM",
 		CHANNEL_COUNT,
 		*this,
-		MixingOutput::SchedulingPolicy::Auto,
+		MixingOutput::SchedulingPolicy::Disabled,
 		false
 	};
 
@@ -131,6 +131,14 @@ int HiwonderEMMWrapper::init()
 bool HiwonderEMMWrapper::updateOutputs(uint16_t *outputs, unsigned num_outputs,
 				       unsigned num_control_groups_updated)
 {
+
+	PX4_INFO("updateOutputs called with %u outputs, %u control groups updated", num_outputs, num_control_groups_updated);
+	PX4_INFO("Outputs:");
+
+	for (unsigned i = 0; i < num_outputs; i++) {
+		PX4_INFO("  %u: %u", i, outputs[i]);
+	}
+
 	// if (state != STATE::RUNNING) { return false; }
 
 	// uint16_t low_level_outputs[CHANNEL_COUNT] = {};
@@ -295,10 +303,10 @@ $ hiwonderemm_pwm_out start -a 0x40 -b 1
 
 )DESCR_STR");
 
-    PRINT_MODULE_USAGE_NAME("hiwonderemm_pwm_out", "driver");
+    PRINT_MODULE_USAGE_NAME("hiwonder_emm", "driver");
     PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the task");
     PRINT_MODULE_USAGE_PARAM_STRING('a',"0x34","<addr>","7-bits I2C address of HiwonderEMM",true);
-	PRINT_MODULE_USAGE_PARAM_INT('b',1,0,255,"bus that hiwonderemm is connected to",true);
+	PRINT_MODULE_USAGE_PARAM_INT('b',1,0,255,"bus that hiwonder_emm is connected to",true);
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;
@@ -409,6 +417,6 @@ void HiwonderEMMWrapper::updateParams() {
 //     }
 }
 
-extern "C" __EXPORT int hiwonderemm_pwm_out_main(int argc, char *argv[]){
+extern "C" __EXPORT int hiwonder_emm_main(int argc, char *argv[]){
 	return HiwonderEMMWrapper::main(argc, argv);
 }
