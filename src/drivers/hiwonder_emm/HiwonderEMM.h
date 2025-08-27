@@ -35,3 +35,30 @@
 #include <cstdint>
 #include <drivers/device/i2c.h>
 #include <px4_boardconfig.h>
+
+#define I2C_ADDR 0x34 // I2C address
+#define ADC_BAT_ADDR 0 // Voltage address
+#define MOTOR_TYPE_ADDR 0x14 // Set the motor type
+#define MOTOR_ENCODER_POLARITY_ADDR 21 // Set the encoder direction polarity
+#define MOTOR_FIXED_PWM_ADDR 31 // Fixed PWM control, open loop
+#define MOTOR_FIXED_SPEED_ADDR 51 // Fixed speed control, closed loop
+#define MOTOR_ENCODER_TOTAL_ADDR 60 // Total pulse value of 4 encoder motors
+#define MOTOR_TYPE_WITHOUT_ENCODER 0 // Motor without encoder
+#define MOTOR_TYPE_TT 1 // TT encoder motor
+#define MOTOR_TYPE_N20 2 // N20 encoder motor
+#define MOTOR_TYPE_JGB37_520_12V_110RPM 3 // JGB37 encoder motor
+#define BUS_FREQUENCY 100000 // I2C bus frequency
+#define I2CBUS 1 // I2C bus number
+#define CHANNEL_COUNT 4 // Number of output channels
+class HiwonderEMM : public device::I2C
+{
+public:
+	HiwonderEMM(int bus, int addr);
+	~HiwonderEMM() override = default;
+
+	int init() override;
+
+protected:
+	int probe() override;
+
+};
