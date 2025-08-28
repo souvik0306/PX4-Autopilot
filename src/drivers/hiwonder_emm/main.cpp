@@ -130,32 +130,14 @@ int HiwonderEMMWrapper::init()
 bool HiwonderEMMWrapper::updateOutputs(uint16_t *outputs, unsigned num_outputs,
 				       unsigned num_control_groups_updated)
 {
+	const uint8_t speed_values[4] = {
+		(uint8_t)(outputs[0] - 128),
+		(uint8_t)(outputs[1] - 128),
+		(uint8_t)(outputs[2] - 128),
+		(uint8_t)(outputs[3] - 128)
+	};
 
-	PX4_INFO("updateOutputs called with %u outputs, %u control groups updated", num_outputs, num_control_groups_updated);
-	PX4_INFO("Outputs:");
-
-	for (unsigned i = 0; i < num_outputs; i++) {
-		PX4_INFO("  %u: %u", i, outputs[i]);
-	}
-
-	// if (state != STATE::RUNNING) { return false; }
-
-	// uint16_t low_level_outputs[CHANNEL_COUNT] = {};
-	// num_outputs = num_outputs > CHANNEL_COUNT ? CHANNEL_COUNT : num_outputs;
-
-	// for (uint8_t i = 0; i < num_outputs; ++i) {
-	// 	if (param_duty_mode & (1 << i)) {
-	// 		low_level_outputs[i] = outputs[i];
-
-	// 	} else {
-	// 		low_level_outputs[i] = hiwonderemm->calcRawFromPulse(outputs[i]);
-	// 	}
-	// }
-
-	// if (hiwonderemm->updateRAW(low_level_outputs, num_outputs) != PX4_OK) {
-	// 	PX4_ERR("Failed to write PWM to HiwonderEMM");
-	// 	return false;
-	// }
+	hiwonderemm->set_motor_speed(speed_values);
 
 	return true;
 }

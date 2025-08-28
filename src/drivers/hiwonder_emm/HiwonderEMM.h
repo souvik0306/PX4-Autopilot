@@ -60,6 +60,10 @@ public:
 
 	int read_adc();
 
+	int set_motor_pwm(const int16_t pwm_values[4]);
+
+	int set_motor_speed(const uint8_t speed_values[4]);
+
 protected:
 	int probe() override;
 
