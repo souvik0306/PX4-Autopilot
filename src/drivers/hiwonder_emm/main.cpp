@@ -75,14 +75,6 @@ protected:
 	void updateParams() override;
 
 private:
-	perf_counter_t	_cycle_perf;
-
-	enum class STATE : uint8_t {
-		INIT,
-		WAIT_FOR_OSC,
-		RUNNING
-	} state{STATE::INIT};
-
 	HiwonderEMM *hiwonderemm = nullptr;
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
 	MixingOutput _mixing_output {
@@ -108,8 +100,6 @@ HiwonderEMMWrapper::~HiwonderEMMWrapper()
 		// hiwonderemm->sleep();
 		delete hiwonderemm;
 	}
-
-	perf_free(_cycle_perf);
 }
 
 int HiwonderEMMWrapper::init()
@@ -157,70 +147,6 @@ void HiwonderEMMWrapper::Run()
 		return;
 	}
 
-	// switch (state) {
-	// case STATE::INIT:
-	// 	updateParams();
-	// 	hiwonderemm->updateFreq(param_pwm_freq);
-	// 	previous_pwm_freq = param_pwm_freq;
-	// 	previous_schd_rate = param_schd_rate;
-
-	// 	hiwonderemm->wake();
-	// 	state = STATE::WAIT_FOR_OSC;
-	// 	ScheduleDelayed(500);
-	// 	break;
-
-	// case STATE::WAIT_FOR_OSC: {
-	// 		state = STATE::RUNNING;
-	// 		ScheduleOnInterval(1000000 / param_schd_rate, 0);
-	// 	}
-	// 	break;
-
-	// case STATE::RUNNING:
-	// 	perf_begin(_cycle_perf);
-
-	// 	_mixing_output.update();
-
-	// 	// check for parameter updates
-	// 	if (_parameter_update_sub.updated()) {
-	// 		// clear update
-	// 		parameter_update_s pupdate;
-	// 		_parameter_update_sub.copy(&pupdate);
-
-	// 		// update parameters from storage
-	// 		updateParams();
-
-	// 		// apply param updates
-	// 		if ((float)fabs(previous_pwm_freq - param_pwm_freq) > 0.01f) {
-	// 			previous_pwm_freq = param_pwm_freq;
-
-	// 			ScheduleClear();
-
-	// 			hiwonderemm->sleep();
-	// 			hiwonderemm->updateFreq(param_pwm_freq);
-	// 			hiwonderemm->wake();
-
-	// 			// update of PWM freq will always trigger scheduling change
-	// 			previous_schd_rate = param_schd_rate;
-
-	// 			state = STATE::WAIT_FOR_OSC;
-	// 			ScheduleDelayed(500);
-
-	// 		} else if ((float)fabs(previous_schd_rate - param_schd_rate) > 0.01f) {
-	// 			// case when PWM freq not changed but scheduling rate does
-	// 			previous_schd_rate = param_schd_rate;
-	// 			ScheduleClear();
-	// 			ScheduleOnInterval(1000000 / param_schd_rate, 1000000 / param_schd_rate);
-	// 		}
-	// 	}
-
-	// 	_mixing_output.updateSubscriptions(false);
-
-	// 	perf_end(_cycle_perf);
-	// 	break;
-	// }
-
-	perf_begin(_cycle_perf);
-
 	_mixing_output.update();
 
 	// check for parameter updates
@@ -257,8 +183,6 @@ void HiwonderEMMWrapper::Run()
 	}
 
 	_mixing_output.updateSubscriptions(false);
-
-	perf_end(_cycle_perf);
 }
 
 int HiwonderEMMWrapper::print_usage(const char *reason)
@@ -307,39 +231,39 @@ int HiwonderEMMWrapper::custom_command(int argc, char **argv) {
 }
 
 int HiwonderEMMWrapper::task_spawn(int argc, char **argv) {
-	int ch;
+	// int ch;
 	int address=I2C_ADDR;
 	int iicbus=I2CBUS;
 
-	int myoptind = 1;
-	const char *myoptarg = nullptr;
-	while ((ch = px4_getopt(argc, argv, "a:b:", &myoptind, &myoptarg)) != EOF) {
-		switch (ch) {
-			case 'a':
-                errno = 0;
-				address = strtol(myoptarg, nullptr, 16);
-                if (errno != 0) {
-                    PX4_WARN("Invalid address");
-                    return PX4_ERROR;
-                }
-				break;
+	// int myoptind = 1;
+	// const char *myoptarg = nullptr;
+	// while ((ch = px4_getopt(argc, argv, "a:b:", &myoptind, &myoptarg)) != EOF) {
+	// 	switch (ch) {
+	// 		case 'a':
+        //         errno = 0;
+	// 			address = strtol(myoptarg, nullptr, 16);
+        //         if (errno != 0) {
+        //             PX4_WARN("Invalid address");
+        //             return PX4_ERROR;
+        //         }
+	// 			break;
 
-			case 'b':
-				iicbus = strtol(myoptarg, nullptr, 10);
-                if (errno != 0) {
-                    PX4_WARN("Invalid bus");
-                    return PX4_ERROR;
-                }
-				break;
+	// 		case 'b':
+	// 			iicbus = strtol(myoptarg, nullptr, 10);
+        //         if (errno != 0) {
+        //             PX4_WARN("Invalid bus");
+        //             return PX4_ERROR;
+        //         }
+	// 			break;
 
-			case '?':
-				PX4_WARN("Unsupported args");
-				return PX4_ERROR;
+	// 		case '?':
+	// 			PX4_WARN("Unsupported args");
+	// 			return PX4_ERROR;
 
-			default:
-				break;
-		}
-	}
+	// 		default:
+	// 			break;
+	// 	}
+	// }
 
     auto *instance = new HiwonderEMMWrapper();
 

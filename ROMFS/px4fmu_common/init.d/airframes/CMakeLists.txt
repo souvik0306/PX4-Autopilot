@@ -160,6 +160,7 @@ if(CONFIG_MODULES_ROVER_MECANUM)
 	px4_add_romfs_files(
 		# [52000, 52999] Mecanum rovers
 		52000_generic_rover_mecanum
+		52001_hiwonder_mecanum
 	)
 endif()
 
