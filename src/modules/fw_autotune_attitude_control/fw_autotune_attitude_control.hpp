@@ -112,8 +112,14 @@ private:
 	void backupAndSaveGainsToParams();
 	void revertParamGains();
 	bool isAuxEnableSwitchEnabled();
+	void updateMaxMeasuredRate(hrt_abstime dt, float rate);
+	void updateAmplitudeDetectionFlags(hrt_abstime now);
+	void increaseSignalAmplitude(hrt_abstime now);
+
 
 	const matrix::Vector3f getIdentificationSignal();
+	const matrix::Vector3f getAmplitudeDetectionSignal();
+
 
 	uORB::SubscriptionCallbackWorkItem _vehicle_torque_setpoint_sub;
 	uORB::SubscriptionCallbackWorkItem _parameter_update_sub{this, ORB_ID(parameter_update)};
@@ -132,6 +138,7 @@ private:
 		init = autotune_attitude_control_status_s::STATE_INIT,
 		roll = autotune_attitude_control_status_s::STATE_ROLL,
 		roll_pause = autotune_attitude_control_status_s::STATE_ROLL_PAUSE,
+		pitch_amp_detection = autotune_attitude_control_status_s::STATE_PITCH_AMPLITUDE_DETECTION,
 		pitch = autotune_attitude_control_status_s::STATE_PITCH,
 		pitch_pause = autotune_attitude_control_status_s::STATE_PITCH_PAUSE,
 		yaw = autotune_attitude_control_status_s::STATE_YAW,
@@ -148,6 +155,19 @@ private:
 	uint8_t _steps_counter{0};
 	uint8_t _max_steps{5};
 	int8_t _signal_sign{0};
+
+	// Amplitude detection variables
+	float _signal_amp{0.1f};
+	float _signal_amp_max{5.0f};
+	float _signal_amp_step{0.1f};
+	float _target_rate{0.5f};
+	hrt_abstime _time_last_amplitude_increase{0};
+	float _max_measured_rate_T1{0.0f};
+	float _max_measured_rate_T2{0.0f};
+	bool _rate_reached_T1{false};
+	bool _rate_reached_T2{false};
+
+	vehicle_angular_velocity_s _angular_velocity{};
 
 	bool _armed{false};
 	uint8_t _nav_state{0};

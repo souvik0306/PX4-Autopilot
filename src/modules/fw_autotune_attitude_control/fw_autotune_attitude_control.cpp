@@ -125,10 +125,9 @@ void FwAutotuneAttitudeControl::Run()
 	}
 
 	vehicle_torque_setpoint_s vehicle_torque_setpoint;
-	vehicle_angular_velocity_s angular_velocity;
 
 	if (!_vehicle_torque_setpoint_sub.copy(&vehicle_torque_setpoint)
-	    || !_vehicle_angular_velocity_sub.copy(&angular_velocity)) {
+	    || !_vehicle_angular_velocity_sub.copy(&_angular_velocity)) {
 		return;
 	}
 
@@ -154,15 +153,15 @@ void FwAutotuneAttitudeControl::Run()
 
 	if (_state == state::roll) {
 		_sys_id.update(_input_scale * vehicle_torque_setpoint.xyz[0],
-			       angular_velocity.xyz[0]);
+			       _angular_velocity.xyz[0]);
 
-	} else if (_state == state::pitch) {
+	} else if (_state == state::pitch || _state == state::pitch_amp_detection) {
 		_sys_id.update(_input_scale * vehicle_torque_setpoint.xyz[1],
-			       angular_velocity.xyz[1]);
+			       _angular_velocity.xyz[1]);
 
 	} else if (_state == state::yaw) {
 		_sys_id.update(_input_scale * vehicle_torque_setpoint.xyz[2],
-			       angular_velocity.xyz[2]);
+			       _angular_velocity.xyz[2]);
 	}
 
 	if (hrt_elapsed_time(&_last_publish) > _publishing_dt_hrt || _last_publish == 0) {
@@ -188,9 +187,17 @@ void FwAutotuneAttitudeControl::Run()
 		_attitude_p = math::constrain(1.f / (math::radians(60.f) * (_kiff(0) + _kiff(2))), 1.f, 5.f);
 
 		const Vector<float, 5> &coeff_var = _sys_id.getVariances();
-		const Vector3f rate_sp = _sys_id.areFiltersInitialized()
-					 ? getIdentificationSignal()
-					 : Vector3f();
+		Vector3f rate_sp{};
+
+
+		if (_sys_id.areFiltersInitialized()) {
+			if (_state == state::pitch_amp_detection) {
+				rate_sp = getAmplitudeDetectionSignal();
+
+			} else {
+				rate_sp = getIdentificationSignal();
+			}
+		}
 
 		autotune_attitude_control_status_s status{};
 		status.timestamp = now;
@@ -341,8 +348,16 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 	case state::roll_pause:
 		if ((now - _state_start_time) > 2_s) {
-			_state = state::pitch;
+			_state = state::pitch_amp_detection;
 			_state_start_time = now;
+
+			_signal_amp = 0.1f;
+			_time_last_amplitude_increase = 0.f;
+			_rate_reached_T1 = false;
+			_rate_reached_T2 = false;
+			_max_measured_rate_T1 = 0.f;
+			_max_measured_rate_T2 = 0.f;
+
 			_sys_id.reset(sys_id_init);
 			_input_scale = 1.f / _param_fw_pr_p.get();
 			_signal_sign = 1;
@@ -354,11 +369,40 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 		break;
 
-	case state::pitch:
-		if (!(_param_fw_at_axes.get() & Axes::pitch)) {
-			// Should not tune this axis, skip
-			_state = state::pitch_pause;
+	case state::pitch_amp_detection: {
+			if (!(_param_fw_at_axes.get() & Axes::pitch)) {
+				// Should not tune this axis, skip
+				_state = state::pitch_pause;
+				break;
+			}
+
+			const hrt_abstime dt = (now - _time_last_amplitude_increase);
+			const float abs_pitch_rate = fabsf(_angular_velocity.xyz[1]);
+
+			// Update the max measured pitch rates and check if the target rate was reached
+			updateMaxMeasuredRate(dt, abs_pitch_rate);
+			updateAmplitudeDetectionFlags(dt);
+
+			// Increase signal amplitude if target rate wasn't reached
+			if ((dt > 1_s && !_rate_reached_T1) || (dt > 2_s && !_rate_reached_T2)) {
+				increaseSignalAmplitude(now);
+
+			// Finalize signal amplitude once criteria are met or max amplitude reached
+			} else if (_rate_reached_T2 || _signal_amp >= _signal_amp_max) {
+
+				_signal_amp = math::min(_signal_amp - _signal_amp_step, _signal_amp_max);
+
+				_state = state::pitch;
+				_state_start_time = now;
+
+				PX4_INFO("Final signal amplitude: %.3f", (double)_signal_amp); // TODO: Remove
+
+			}
+
+			break;
 		}
+
+	case state::pitch:
 
 		if ((_sys_id.getFitness() < converged_thr)
 		    && ((now - _state_start_time) > 5_s)) {
@@ -483,7 +527,8 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 	// In case of convergence timeout
 	// the identification sequence is aborted immediately
-	if (_state != state::wait_for_disarm && _state != state::idle && _state != state::fail && _state != state::complete) {
+	if (_state != state::wait_for_disarm && _state != state::idle && _state != state::fail && _state != state::complete
+	    && _state != state::pitch_amp_detection) {
 		if (now - _state_start_time > 20_s
 		    || (_param_fw_at_man_aux.get() && !_aux_switch_en)
 		    || _start_flight_mode != _nav_state) {
@@ -618,6 +663,68 @@ void FwAutotuneAttitudeControl::saveGainsToParams()
 	}
 }
 
+void FwAutotuneAttitudeControl::updateMaxMeasuredRate(hrt_abstime dt, float rate)
+{
+	// TODO: make conditional against (2*)1/f instead of hard-coded (2*)period
+
+	if (dt <= 1_s) {
+		_max_measured_rate_T1 = fmaxf(_max_measured_rate_T1, rate);
+
+	} else if (dt <= 2_s && _rate_reached_T1) {
+		_max_measured_rate_T2 = fmaxf(_max_measured_rate_T2, rate);
+	}
+
+}
+
+void FwAutotuneAttitudeControl::updateAmplitudeDetectionFlags(hrt_abstime dt)
+{
+	// TODO: make conditional against (2*f)1/f instead of hard-coded (2*)period
+
+	if (dt > 1_s && !_rate_reached_T1) {
+		_rate_reached_T1 = (_max_measured_rate_T1 >= _target_rate);
+	}
+
+	if (dt > 2_s && !_rate_reached_T2) {
+		_rate_reached_T2 = (_max_measured_rate_T2 >= _target_rate);
+	}
+}
+
+void FwAutotuneAttitudeControl::increaseSignalAmplitude(hrt_abstime now)
+{
+	_signal_amp += _signal_amp_step;
+	_signal_amp = math::min(_signal_amp, _signal_amp_max); // Safety clamp
+
+	_time_last_amplitude_increase = now;
+	_max_measured_rate_T1 = 0.f;
+	_max_measured_rate_T2 = 0.f;
+	_rate_reached_T1 = false;
+	_rate_reached_T2 = false;
+}
+
+const Vector3f FwAutotuneAttitudeControl::getAmplitudeDetectionSignal()
+{
+	const hrt_abstime now = hrt_absolute_time();
+	const float t = static_cast<float>(now - _state_start_time) * 1e-6f;
+
+	float signal = -sinf(2.0f * M_PI_F * t);
+
+	signal *= _signal_amp;
+	Vector3f rate_sp{};
+
+	float signal_scaled = 0.0f;
+
+	if (_state ==  state::pitch_amp_detection) {
+		const float pitch_rate_max_deg = math::min(_param_fw_p_rmax_pos.get(), _param_fw_p_rmax_neg.get());
+		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_p_tc.get()), math::radians(pitch_rate_max_deg));
+		rate_sp(1) = signal_scaled - _signal_filter.getState();
+
+	}
+
+	_signal_filter.update(signal_scaled);
+
+	return rate_sp;
+}
+
 const Vector3f FwAutotuneAttitudeControl::getIdentificationSignal()
 {
 
@@ -665,7 +772,7 @@ const Vector3f FwAutotuneAttitudeControl::getIdentificationSignal()
 	}
 
 
-	signal *= _param_fw_at_sysid_amp.get();
+	signal *= _signal_amp;
 	Vector3f rate_sp{};
 
 	float signal_scaled = 0.f;
