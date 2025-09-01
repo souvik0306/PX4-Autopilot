@@ -120,12 +120,16 @@ int HiwonderEMMWrapper::init()
 bool HiwonderEMMWrapper::updateOutputs(uint16_t *outputs, unsigned num_outputs,
 				       unsigned num_control_groups_updated)
 {
-	const uint8_t speed_values[4] = {
-		(uint8_t)(outputs[0] - 128),
-		(uint8_t)(outputs[1] - 128),
-		(uint8_t)(outputs[2] - 128),
-		(uint8_t)(outputs[3] - 128)
-	};
+	uint8_t speed_values[4];
+
+	for (unsigned i = 0; i < num_outputs && i < CHANNEL_COUNT; i++) {
+		if (outputs[i] < 130 && outputs[i] > 125) {
+			speed_values[i] = 0;
+
+		} else {
+			speed_values[i] = (uint8_t)(outputs[i] - 128);
+		}
+	}
 
 	hiwonderemm->set_motor_speed(speed_values);
 
