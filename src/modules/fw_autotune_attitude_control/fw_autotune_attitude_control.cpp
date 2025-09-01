@@ -387,7 +387,8 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 			if ((dt > 1_s && !_rate_reached_T1) || (dt > 2_s && !_rate_reached_T2)) {
 				increaseSignalAmplitude(now);
 
-			// Finalize signal amplitude once criteria are met or max amplitude reached
+				// Finalize signal amplitude once criteria are met or max amplitude reached
+
 			} else if (_rate_reached_T2 || _signal_amp >= _signal_amp_max) {
 
 				_signal_amp = math::min(_signal_amp - _signal_amp_step, _signal_amp_max);
