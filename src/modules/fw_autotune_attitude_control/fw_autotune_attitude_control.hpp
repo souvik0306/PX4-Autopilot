@@ -112,8 +112,7 @@ private:
 	void backupAndSaveGainsToParams();
 	void revertParamGains();
 	bool isAuxEnableSwitchEnabled();
-	void updateMaxMeasuredRate(hrt_abstime dt, float rate);
-	void updateAmplitudeDetectionFlags(hrt_abstime now);
+	void updateAmplitudeDetectionFlags(hrt_abstime dt, float rate);
 	void increaseSignalAmplitude(hrt_abstime now);
 
 
@@ -161,13 +160,11 @@ private:
 	float _signal_amp_max{5.0f};
 	float _signal_amp_step{0.1f};
 	float _target_rate{0.5f};
-	hrt_abstime _time_last_amplitude_increase{0};
-	float _max_measured_rate_T1{0.0f};
-	float _max_measured_rate_T2{0.0f};
 	bool _rate_reached_T1{false};
 	bool _rate_reached_T2{false};
+	hrt_abstime _time_last_amplitude_increase{0};
 
-	vehicle_angular_velocity_s _angular_velocity{};
+	matrix::Vector3f _angular_velocity{};
 
 	bool _armed{false};
 	uint8_t _nav_state{0};
