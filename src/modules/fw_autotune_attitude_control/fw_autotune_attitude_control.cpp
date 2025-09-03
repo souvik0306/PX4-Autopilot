@@ -129,7 +129,7 @@ void FwAutotuneAttitudeControl::Run()
 		vehicle_angular_velocity_s vehicle_angular_velocity;
 
 		if (_vehicle_angular_velocity_sub.copy(&vehicle_angular_velocity)) {
-			_angular_velocity = matrix::Vector3f(vehicle_angular_velocity.xyz);
+			_angular_velocity = Vector3f(vehicle_angular_velocity.xyz);
 		}
 	}
 
