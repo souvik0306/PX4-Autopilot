@@ -123,12 +123,13 @@ bool HiwonderEMMWrapper::updateOutputs(uint16_t *outputs, unsigned num_outputs,
 	uint8_t speed_values[4];
 
 	for (unsigned i = 0; i < num_outputs && i < CHANNEL_COUNT; i++) {
-		if (outputs[i] < 130 && outputs[i] > 125) {
-			speed_values[i] = 0;
+		// if (outputs[i] < 129 && outputs[i] > 127) {
+		// 	speed_values[i] = 0;
 
-		} else {
-			speed_values[i] = (uint8_t)(outputs[i] - 128);
-		}
+		// } else {
+		// 	speed_values[i] = (uint8_t)(outputs[i] - 128);
+		// }
+		speed_values[i] = (uint8_t)(outputs[i] - 128);
 	}
 
 	hiwonderemm->set_motor_speed(speed_values);
@@ -161,29 +162,6 @@ void HiwonderEMMWrapper::Run()
 
 		// update parameters from storage
 		updateParams();
-
-		// // apply param updates
-		// if ((float)fabs(previous_pwm_freq - param_pwm_freq) > 0.01f) {
-		// 	previous_pwm_freq = param_pwm_freq;
-
-		// 	ScheduleClear();
-
-		// 	hiwonderemm->sleep();
-		// 	hiwonderemm->updateFreq(param_pwm_freq);
-		// 	hiwonderemm->wake();
-
-		// 	// update of PWM freq will always trigger scheduling change
-		// 	previous_schd_rate = param_schd_rate;
-
-		// 	state = STATE::WAIT_FOR_OSC;
-		// 	ScheduleDelayed(500);
-
-		// } else if ((float)fabs(previous_schd_rate - param_schd_rate) > 0.01f) {
-		// 	// case when PWM freq not changed but scheduling rate does
-		// 	previous_schd_rate = param_schd_rate;
-		// 	ScheduleClear();
-		// 	ScheduleOnInterval(1000000 / param_schd_rate, 1000000 / param_schd_rate);
-		// }
 	}
 
 	_mixing_output.updateSubscriptions(false);
@@ -198,24 +176,11 @@ int HiwonderEMMWrapper::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-This is a HiwonderEMM PWM output driver.
-
-It runs on I2C workqueue which is asynchronous with FC control loop,
-fetching the latest mixing result and write them to HiwonderEMM at its scheduling ticks.
-
-It can do full 12bits output as duty-cycle mode, while also able to output precious pulse width
-that can be accepted by most ESCs and servos.
-
-### Examples
-It is typically started with:
-$ hiwonderemm_pwm_out start -a 0x40 -b 1
-
+Hiwonder encoder motor module driver for PX4.
 )DESCR_STR");
 
     PRINT_MODULE_USAGE_NAME("hiwonder_emm", "driver");
     PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the task");
-    PRINT_MODULE_USAGE_PARAM_STRING('a',"0x34","<addr>","7-bits I2C address of HiwonderEMM",true);
-	PRINT_MODULE_USAGE_PARAM_INT('b',1,0,255,"bus that hiwonder_emm is connected to",true);
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;
@@ -235,70 +200,39 @@ int HiwonderEMMWrapper::custom_command(int argc, char **argv) {
 }
 
 int HiwonderEMMWrapper::task_spawn(int argc, char **argv) {
-	// int ch;
 	int address=I2C_ADDR;
 	int iicbus=I2CBUS;
 
-	// int myoptind = 1;
-	// const char *myoptarg = nullptr;
-	// while ((ch = px4_getopt(argc, argv, "a:b:", &myoptind, &myoptarg)) != EOF) {
-	// 	switch (ch) {
-	// 		case 'a':
-        //         errno = 0;
-	// 			address = strtol(myoptarg, nullptr, 16);
-        //         if (errno != 0) {
-        //             PX4_WARN("Invalid address");
-        //             return PX4_ERROR;
-        //         }
-	// 			break;
+	auto *instance = new HiwonderEMMWrapper();
 
-	// 		case 'b':
-	// 			iicbus = strtol(myoptarg, nullptr, 10);
-        //         if (errno != 0) {
-        //             PX4_WARN("Invalid bus");
-        //             return PX4_ERROR;
-        //         }
-	// 			break;
+	if (instance) {
+		_object.store(instance);
+		_task_id = task_id_is_work_queue;
 
-	// 		case '?':
-	// 			PX4_WARN("Unsupported args");
-	// 			return PX4_ERROR;
+		instance->hiwonderemm = new HiwonderEMM(iicbus, address);
+		if(instance->hiwonderemm==nullptr){
+		PX4_ERR("alloc failed");
+		goto driverInstanceAllocFailed;
+		}
 
-	// 		default:
-	// 			break;
-	// 	}
-	// }
+		if (instance->init() == PX4_OK) {
+		return PX4_OK;
+		} else {
+		PX4_ERR("driver init failed");
+		delete instance->hiwonderemm;
+		instance->hiwonderemm=nullptr;
+		}
+	} else {
+		PX4_ERR("alloc failed");
+		return PX4_ERROR;
+	}
 
-    auto *instance = new HiwonderEMMWrapper();
+	driverInstanceAllocFailed:
+	delete instance;
+	_object.store(nullptr);
+	_task_id = -1;
 
-    if (instance) {
-        _object.store(instance);
-        _task_id = task_id_is_work_queue;
-
-        instance->hiwonderemm = new HiwonderEMM(iicbus, address);
-        if(instance->hiwonderemm==nullptr){
-            PX4_ERR("alloc failed");
-            goto driverInstanceAllocFailed;
-        }
-
-        if (instance->init() == PX4_OK) {
-            return PX4_OK;
-        } else {
-            PX4_ERR("driver init failed");
-            delete instance->hiwonderemm;
-            instance->hiwonderemm=nullptr;
-        }
-    } else {
-        PX4_ERR("alloc failed");
-	    return PX4_ERROR;
-    }
-
-    driverInstanceAllocFailed:
-    delete instance;
-    _object.store(nullptr);
-    _task_id = -1;
-
-    return PX4_ERROR;
+	return PX4_ERROR;
 }
 
 void HiwonderEMMWrapper::updateParams() {

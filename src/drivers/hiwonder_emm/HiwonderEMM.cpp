@@ -46,79 +46,67 @@ int HiwonderEMM::init()
 {
 	int ret = I2C::init();
 
-	if (ret != PX4_OK) { return ret; }
+	if (ret != PX4_OK) {
+		PX4_ERR("I2C init failed. Error: %d", ret);
+		return ret;
+	}
 
 	const uint8_t cmd[2] = {MOTOR_TYPE_ADDR, MOTOR_TYPE_JGB37_520_12V_110RPM};
-	int motor_type = transfer(cmd, 2, nullptr, 0);
-	const uint8_t cmd2[2] = {MOTOR_ENCODER_POLARITY_ADDR, 0};
-	int encoder_polarity = transfer(cmd2, 2, nullptr, 0);
+	ret = transfer(cmd, 2, nullptr, 0);
 
-	if (motor_type != PX4_OK || encoder_polarity != PX4_OK) {
-		PX4_ERR("Hiwonder EMM initialization failed");
-		return PX4_ERROR;
-
-	} else {
-		PX4_INFO("Hiwonder EMM initialized");
+	if (ret != PX4_OK) {
+		PX4_ERR("Failed to set motor type. Error: %d", ret);
+		return ret;
 	}
+
+	const uint8_t cmd2[2] = {MOTOR_ENCODER_POLARITY_ADDR, 0};
+	ret = transfer(cmd2, 2, nullptr, 0);
+
+	if (ret != PX4_OK) {
+		PX4_ERR("Failed to set encoder polarity. Error: %d", ret);
+		return ret;
+	}
+
+	PX4_INFO("Hiwonder EMM initialized");
 
 	return PX4_OK;
 }
 
 int HiwonderEMM::probe()
 {
-	const int ret = I2C::probe();
+	int ret = I2C::probe();
 
-	if (ret != PX4_OK) { return ret; }
-
-	const uint8_t cmd = ADC_BAT_ADDR;
-	uint8_t buf[2] = {};
-	const int ret2 = transfer(&cmd, 1, buf, 2);
-
-	if (ret2 != PX4_OK) {
-		PX4_ERR("probe: i2c::transfer returned %d", ret);
-
-	} else {
-		PX4_INFO("HiwonderEMM found");
+	if (ret != PX4_OK) {
+		PX4_ERR("I2C probe failed. Error: %d", ret);
+		return ret;
 	}
 
-	return ret2;
+	int adc_value{0};
+	ret = read_adc(adc_value);
+
+	if (ret != PX4_OK) {
+		PX4_ERR("Failed to probe Hiwonder EMM. Error: %d", ret);
+		return ret;
+	}
+
+	PX4_INFO("Hiwonder EMM found");
+
+	return PX4_OK;
 }
 
-int HiwonderEMM::read_adc()
+int HiwonderEMM::read_adc(int &adc_value)
 {
 	const uint8_t cmd = ADC_BAT_ADDR;
 	uint8_t buf[2] = {};
 	const int ret = transfer(&cmd, 1, buf, 2);
 
 	if (ret != PX4_OK) {
-		PX4_ERR("read_adc failed");
+		PX4_ERR("Failed to read ADC. Error: %d", ret);
+		adc_value = 0;
 		return ret;
 	}
 
-	return (buf[0] << 8) | buf[1];
-}
-
-int HiwonderEMM::set_motor_pwm(const int16_t pwm_values[4])
-{
-	uint8_t cmd[9];
-	cmd[0] = MOTOR_FIXED_PWM_ADDR;
-	cmd[1] = (pwm_values[0] >> 8) & 0xFF;
-	cmd[2] = pwm_values[0] & 0xFF;
-	cmd[3] = (pwm_values[1] >> 8) & 0xFF;
-	cmd[4] = pwm_values[1] & 0xFF;
-	cmd[5] = (pwm_values[2] >> 8) & 0xFF;
-	cmd[6] = pwm_values[2] & 0xFF;
-	cmd[7] = (pwm_values[3] >> 8) & 0xFF;
-	cmd[8] = pwm_values[3] & 0xFF;
-	const int ret = transfer(cmd, sizeof(cmd), nullptr, 0);
-
-	if (ret != PX4_OK) {
-		PX4_ERR("set_motor_pwm failed");
-
-	} else {
-		PX4_INFO("PWM set to %d %d %d %d", pwm_values[0], pwm_values[1], pwm_values[2], pwm_values[3]);
-	}
-
+	adc_value = (buf[0] << 8) | buf[1];
 	return ret;
 }
 
@@ -133,12 +121,8 @@ int HiwonderEMM::set_motor_speed(const uint8_t speed_values[4])
 	const int ret = transfer(cmd, sizeof(cmd), nullptr, 0);
 
 	if (ret != PX4_OK) {
-		PX4_ERR("set_motor_speed failed");
+		PX4_ERR("Failed to set motor speed. Error: %d", ret);
 	}
-
-	// } else {
-	// 	PX4_INFO("Speed set to %d %d %d %d", cmd[1], cmd[2], cmd[3], cmd[4]);
-	// }
 
 	return ret;
 }

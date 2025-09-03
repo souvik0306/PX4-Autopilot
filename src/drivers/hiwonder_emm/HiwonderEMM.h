@@ -58,9 +58,7 @@ public:
 
 	int init() override;
 
-	int read_adc();
-
-	int set_motor_pwm(const int16_t pwm_values[4]);
+	int read_adc(int &adc_value);
 
 	int set_motor_speed(const uint8_t speed_values[4]);
 
