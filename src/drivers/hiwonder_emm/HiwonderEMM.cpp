@@ -66,12 +66,13 @@ int HiwonderEMM::init()
 
 int HiwonderEMM::probe()
 {
-	int ret = I2C::probe();
+	const int ret = I2C::probe();
 
 	if (ret != PX4_OK) { return ret; }
 
-	uint8_t cmd = MOTOR_TYPE_ADDR;
-	const int ret2 = transfer(&cmd, 1, nullptr, 0);
+	const uint8_t cmd = ADC_BAT_ADDR;
+	uint8_t buf[2] = {};
+	const int ret2 = transfer(&cmd, 1, buf, 2);
 
 	if (ret2 != PX4_OK) {
 		PX4_ERR("probe: i2c::transfer returned %d", ret);
@@ -81,7 +82,6 @@ int HiwonderEMM::probe()
 	}
 
 	return ret2;
-	// return PX4_OK;
 }
 
 int HiwonderEMM::read_adc()
@@ -134,10 +134,11 @@ int HiwonderEMM::set_motor_speed(const uint8_t speed_values[4])
 
 	if (ret != PX4_OK) {
 		PX4_ERR("set_motor_speed failed");
-
-	} else {
-		PX4_INFO("Speed set to %d %d %d %d", cmd[1], cmd[2], cmd[3], cmd[4]);
 	}
+
+	// } else {
+	// 	PX4_INFO("Speed set to %d %d %d %d", cmd[1], cmd[2], cmd[3], cmd[4]);
+	// }
 
 	return ret;
 }
