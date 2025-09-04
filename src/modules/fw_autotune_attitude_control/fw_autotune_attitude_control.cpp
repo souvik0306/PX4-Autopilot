@@ -159,7 +159,7 @@ void FwAutotuneAttitudeControl::Run()
 
 	checkFilters();
 
-	if (_state == state::roll) {
+	if (_state == state::roll || _state == state::roll_amp_detection) {
 		_sys_id.update(_input_scale * vehicle_torque_setpoint.xyz[0],
 			       _angular_velocity(0));
 
@@ -199,7 +199,7 @@ void FwAutotuneAttitudeControl::Run()
 
 
 		if (_sys_id.areFiltersInitialized()) {
-			if (_state == state::pitch_amp_detection) {
+			if (_state == state::roll_amp_detection || _state == state::pitch_amp_detection) {
 				rate_sp = getAmplitudeDetectionSignal();
 
 			} else {
@@ -323,25 +323,39 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 	case state::init:
 		if (_are_filters_initialized) {
-			_state = state::roll;
+			_state = state::roll_amp_detection;
+			_amplitude_detection_state = amplitudeDetectionState::init;
 			_state_start_time = now;
 			_sys_id.reset(sys_id_init);
 			// first step needs to be shorter to keep the drone centered
 			_steps_counter = 5;
 			_max_steps = 10;
-			_signal_sign = 1;
-			_input_scale = 1.f / _param_fw_rr_p.get();
 			_signal_filter.reset(0.f);
-			_gains_backup_available = false;
 		}
 
 		break;
 
-	case state::roll:
-		if (!(_param_fw_at_axes.get() & Axes::roll)) {
-			// Should not tune this axis, skip
-			_state = state::roll_pause;
+	case state::roll_amp_detection: {
+			if (!(_param_fw_at_axes.get() & Axes::roll)) {
+				// Should not tune this axis, skip
+				_state = state::roll_pause;
+				break;
+			}
+
+			const float abs_roll_rate = fabsf(_angular_velocity(0));
+
+			updateAmplitudeDetectionState(now, abs_roll_rate, 0.5f);
+
+			if (_amplitude_detection_state == amplitudeDetectionState::complete) {
+
+				_state = state::roll;
+				_state_start_time = now;
+			}
+
+			break;
 		}
+
+	case state::roll:
 
 		if ((_sys_id.getFitness() < converged_thr)
 		    && ((now - _state_start_time) > 5_s)) {
@@ -735,11 +749,15 @@ const Vector3f FwAutotuneAttitudeControl::getAmplitudeDetectionSignal()
 
 	float signal_scaled = 0.0f;
 
+	if (_state == state::roll_amp_detection) {
+		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_r_tc.get()), math::radians(_param_fw_r_rmax.get()));
+		rate_sp(0) = signal_scaled - _signal_filter.getState();
+	}
+
 	if (_state ==  state::pitch_amp_detection) {
 		const float pitch_rate_max_deg = math::min(_param_fw_p_rmax_pos.get(), _param_fw_p_rmax_neg.get());
 		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_p_tc.get()), math::radians(pitch_rate_max_deg));
 		rate_sp(1) = signal_scaled - _signal_filter.getState();
-
 	}
 
 	_signal_filter.update(signal_scaled);

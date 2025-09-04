@@ -133,6 +133,7 @@ private:
 	enum class state {
 		idle = autotune_attitude_control_status_s::STATE_IDLE,
 		init = autotune_attitude_control_status_s::STATE_INIT,
+		roll_amp_detection = autotune_attitude_control_status_s::STATE_ROLL_AMPLITUDE_DETECTION,
 		roll = autotune_attitude_control_status_s::STATE_ROLL,
 		roll_pause = autotune_attitude_control_status_s::STATE_ROLL_PAUSE,
 		pitch_amp_detection = autotune_attitude_control_status_s::STATE_PITCH_AMPLITUDE_DETECTION,
