@@ -358,12 +358,7 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 		if ((now - _state_start_time) > 2_s) {
 			_state = state::pitch_amp_detection;
 			_state_start_time = now;
-
-			_signal_amp = 0.1f;
-			_time_last_amplitude_increase = 0.f;
-			_rate_reached_T1 = false;
-			_rate_reached_T2 = false;
-
+			_time_last_amplitude_increase = now;
 			_sys_id.reset(sys_id_init);
 			_input_scale = 1.f / _param_fw_pr_p.get();
 			_signal_sign = 1;
@@ -382,44 +377,17 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 				break;
 			}
 
-			const hrt_abstime time_since_last_amplitude_increase = (now - _time_last_amplitude_increase);
 			const float abs_pitch_rate = fabsf(_angular_velocity(1));
 
-			// if we are within the first period (T1) and have not reached the target yet
-			if (time_since_last_amplitude_increase <= 1_s) {
-				if (!_rate_reached_T1) {
-					_rate_reached_T1 = (abs_pitch_rate >= _target_rate);
-				}
-			}
+			updateAmplitudeDetectionState(now, abs_pitch_rate, 0.5f);
 
-			// else if we are in the second period (T2), we reached the target in T1, and we have not yet reached it in T2
-			else if (time_since_last_amplitude_increase > 1_s && time_since_last_amplitude_increase <= 2_s && _rate_reached_T1) {
-				if (!_rate_reached_T2) {
-					_rate_reached_T2 = (abs_pitch_rate >= _target_rate);
-				}
-			}
+			if (_amplitude_detection_state == amplitudeDetectionState::complete) {
 
-			// else if we have completed T2 and we reached the target OR if we have reached the max amplitude
-			else if ((time_since_last_amplitude_increase > 2_s && _rate_reached_T2) ||  _signal_amp >= _signal_amp_max) {
-
-				// set final signal amplitude
-				_signal_amp = math::min(_signal_amp - _signal_amp_step, _signal_amp_max);
+				// reset
+				_amplitude_detection_state = amplitudeDetectionState::init;
 
 				_state = state::pitch;
 				_state_start_time = now;
-
-				PX4_INFO("Final signal amplitude: %.3f", (double)_signal_amp); // TODO: Remove
-			}
-
-			// none of the above, increase the signal amplitude
-			else {
-				_signal_amp += _signal_amp_step;
-				_signal_amp = math::min(_signal_amp, _signal_amp_max); // Safety clamp
-
-				_time_last_amplitude_increase = now;
-				_rate_reached_T1 = false;
-				_rate_reached_T2 = false;
-
 			}
 
 			break;
@@ -686,12 +654,86 @@ void FwAutotuneAttitudeControl::saveGainsToParams()
 	}
 }
 
+void FwAutotuneAttitudeControl::updateAmplitudeDetectionState(const hrt_abstime now,
+		const float rate, const float target_rate)
+{
+
+	const hrt_abstime time_since_last_amplitude_increase = now - _time_last_amplitude_increase;
+
+	switch (_amplitude_detection_state) {
+	case amplitudeDetectionState::init:
+		_signal_amp = 0.1f;
+		_rate_reached_T1 = false;
+		_rate_reached_T2 = false;
+
+		_amplitude_detection_state = amplitudeDetectionState::first_period;
+
+		break;
+
+
+	case amplitudeDetectionState::first_period:
+
+		if (!_rate_reached_T1 && rate >= target_rate) {
+			_rate_reached_T1 = true;
+		}
+
+		if (time_since_last_amplitude_increase >= 1_s) {
+			_amplitude_detection_state = _rate_reached_T1 ?
+						     amplitudeDetectionState::second_period :
+						     amplitudeDetectionState::increase_amplitude;
+
+			// reset flag
+			_rate_reached_T1 = false;
+		}
+
+		break;
+
+	case amplitudeDetectionState::second_period:
+		if (!_rate_reached_T2 && rate >= target_rate) {
+			_rate_reached_T2 = true;
+		}
+
+		if (time_since_last_amplitude_increase >= 2_s) {
+			_amplitude_detection_state = _rate_reached_T2 ?
+						     amplitudeDetectionState::set_amplitude :
+						     amplitudeDetectionState::increase_amplitude;
+			// reset flag
+			_rate_reached_T2 = false;
+		}
+
+		break;
+
+
+	case amplitudeDetectionState::increase_amplitude:
+
+		_signal_amp += _signal_amp_step;
+		_time_last_amplitude_increase = now;
+
+		_amplitude_detection_state = (_signal_amp > _signal_amp_max) ?
+					     amplitudeDetectionState::set_amplitude :
+					     amplitudeDetectionState::first_period;
+
+
+		break;
+
+	case amplitudeDetectionState::set_amplitude:
+
+		_signal_amp = math::min(_signal_amp - _signal_amp_step, _signal_amp_max);
+		_amplitude_detection_state = amplitudeDetectionState::complete;
+
+		break;
+
+	case amplitudeDetectionState::complete:
+		break;
+	}
+}
+
 const Vector3f FwAutotuneAttitudeControl::getAmplitudeDetectionSignal()
 {
 	const hrt_abstime now = hrt_absolute_time();
 	const float t = static_cast<float>(now - _state_start_time) * 1e-6f;
 
-	float signal = -sinf(2.0f * M_PI_F * t);
+	float signal = sinf(2.0f * M_PI_F * t);
 
 	signal *= _signal_amp;
 	Vector3f rate_sp{};

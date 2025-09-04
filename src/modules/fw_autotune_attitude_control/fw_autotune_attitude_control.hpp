@@ -106,15 +106,13 @@ private:
 	void checkFilters();
 
 	void updateStateMachine(hrt_abstime now);
+	void updateAmplitudeDetectionState(hrt_abstime now, float rate, float target_rate);
 	void copyGains(int index);
 	bool areGainsGood() const;
 	void saveGainsToParams();
 	void backupAndSaveGainsToParams();
 	void revertParamGains();
 	bool isAuxEnableSwitchEnabled();
-	void updateAmplitudeDetectionFlags(hrt_abstime dt, float rate);
-	void increaseSignalAmplitude(hrt_abstime now);
-
 
 	const matrix::Vector3f getIdentificationSignal();
 	const matrix::Vector3f getAmplitudeDetectionSignal();
@@ -149,6 +147,15 @@ private:
 		fail = autotune_attitude_control_status_s::STATE_FAIL,
 		wait_for_disarm = autotune_attitude_control_status_s::STATE_WAIT_FOR_DISARM
 	} _state{state::idle};
+
+	enum class amplitudeDetectionState {
+		init,
+		first_period,
+		second_period,
+		increase_amplitude,
+		set_amplitude,
+		complete
+	} _amplitude_detection_state{amplitudeDetectionState::init};
 
 	hrt_abstime _state_start_time{0};
 	uint8_t _steps_counter{0};
