@@ -139,6 +139,7 @@ private:
 		pitch_amp_detection = autotune_attitude_control_status_s::STATE_PITCH_AMPLITUDE_DETECTION,
 		pitch = autotune_attitude_control_status_s::STATE_PITCH,
 		pitch_pause = autotune_attitude_control_status_s::STATE_PITCH_PAUSE,
+		yaw_amp_detection = autotune_attitude_control_status_s::STATE_YAW_AMPLITUDE_DETECTION,
 		yaw = autotune_attitude_control_status_s::STATE_YAW,
 		yaw_pause = autotune_attitude_control_status_s::STATE_YAW_PAUSE,
 		apply = autotune_attitude_control_status_s::STATE_APPLY,

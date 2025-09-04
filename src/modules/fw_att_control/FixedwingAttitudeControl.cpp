@@ -320,6 +320,7 @@ void FixedwingAttitudeControl::Run()
 						     || pid_autotune.state == autotune_attitude_control_status_s::STATE_YAW
 						     || pid_autotune.state == autotune_attitude_control_status_s::STATE_ROLL_AMPLITUDE_DETECTION
 						     || pid_autotune.state == autotune_attitude_control_status_s::STATE_PITCH_AMPLITUDE_DETECTION
+						     || pid_autotune.state == autotune_attitude_control_status_s::STATE_YAW_AMPLITUDE_DETECTION
 						     || pid_autotune.state == autotune_attitude_control_status_s::STATE_TEST)
 						    && ((hrt_absolute_time() - pid_autotune.timestamp) < 1_s)) {
 
