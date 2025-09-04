@@ -529,6 +529,7 @@ private:
 	uint32_t _flow_counter{0};                      ///< number of flow samples read for initialization
 
 	Vector2f _flow_rate_compensated{}; ///< measured angular rate of the image about the X and Y body axes after removal of body rotation (rad/s), RH rotation is positive
+	AlphaFilter<Vector2f> _flow_rate_compensated_lpf{_dt_ekf_avg, _kSensorLpfTimeConstant};
 #endif // CONFIG_EKF2_OPTICAL_FLOW
 
 #if defined(CONFIG_EKF2_AIRSPEED)
@@ -861,11 +862,12 @@ private:
 	void stopGnssPosFusion();
 	void updateGnssVel(const imuSample &imu_sample, const gnssSample &gnss_sample, estimator_aid_source3d_s &aid_src);
 	void updateGnssPos(const gnssSample &gnss_sample, estimator_aid_source2d_s &aid_src);
+	bool isGnssVelResetAllowed() const;
+	bool isGnssPosResetAllowed() const;
 	void controlGnssYawEstimator(estimator_aid_source3d_s &aid_src_vel);
 	bool tryYawEmergencyReset();
 	void resetVelocityToGnss(estimator_aid_source3d_s &aid_src);
 	void resetHorizontalPositionToGnss(estimator_aid_source2d_s &aid_src);
-	bool shouldResetGpsFusion() const;
 
 	void controlGnssHeightFusion(const gnssSample &gps_sample);
 	void stopGpsHgtFusion();
