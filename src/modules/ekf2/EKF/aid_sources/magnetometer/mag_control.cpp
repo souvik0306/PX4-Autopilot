@@ -174,7 +174,8 @@ void Ekf::controlMagFusion(const imuSample &imu_sample)
 		checkMagHeadingConsistency(mag_sample);
 
 		{
-			const bool mag_consistent_or_no_ne_aiding = _control_status.flags.mag_heading_consistent || !isNorthEastAidingActive();
+			const bool mag_consistent_or_no_ne_aiding = _control_status.flags.mag_heading_consistent || (!isNorthEastAidingActive()
+					&& !_control_status.flags.vehicle_at_rest);
 			const bool common_conditions_passing = _control_status.flags.mag
 							       && ((_control_status.flags.yaw_align && mag_consistent_or_no_ne_aiding)
 									       || (!_control_status.flags.ev_yaw && !_control_status.flags.yaw_align))
