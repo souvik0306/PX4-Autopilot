@@ -357,8 +357,8 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 	case state::roll_pause:
 		if ((now - _state_start_time) > 2_s) {
 			_state = state::pitch_amp_detection;
+			_amplitude_detection_state = amplitudeDetectionState::init;
 			_state_start_time = now;
-			_time_last_amplitude_increase = now;
 			_sys_id.reset(sys_id_init);
 			_input_scale = 1.f / _param_fw_pr_p.get();
 			_signal_sign = 1;
@@ -382,9 +382,6 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 			updateAmplitudeDetectionState(now, abs_pitch_rate, 0.5f);
 
 			if (_amplitude_detection_state == amplitudeDetectionState::complete) {
-
-				// reset
-				_amplitude_detection_state = amplitudeDetectionState::init;
 
 				_state = state::pitch;
 				_state_start_time = now;
@@ -518,8 +515,7 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 	// In case of convergence timeout
 	// the identification sequence is aborted immediately
-	if (_state != state::wait_for_disarm && _state != state::idle && _state != state::fail && _state != state::complete
-	    && _state != state::pitch_amp_detection) {
+	if (_state != state::wait_for_disarm && _state != state::idle && _state != state::fail && _state != state::complete) {
 		if (now - _state_start_time > 20_s
 		    || (_param_fw_at_man_aux.get() && !_aux_switch_en)
 		    || _start_flight_mode != _nav_state) {
@@ -663,9 +659,8 @@ void FwAutotuneAttitudeControl::updateAmplitudeDetectionState(const hrt_abstime 
 	switch (_amplitude_detection_state) {
 	case amplitudeDetectionState::init:
 		_signal_amp = 0.1f;
-		_rate_reached_T1 = false;
-		_rate_reached_T2 = false;
-
+		_rate_reached = false;
+		_time_last_amplitude_increase = _state_start_time;
 		_amplitude_detection_state = amplitudeDetectionState::first_period;
 
 		break;
@@ -673,32 +668,32 @@ void FwAutotuneAttitudeControl::updateAmplitudeDetectionState(const hrt_abstime 
 
 	case amplitudeDetectionState::first_period:
 
-		if (!_rate_reached_T1 && rate >= target_rate) {
-			_rate_reached_T1 = true;
+		if (!_rate_reached && rate >= target_rate) {
+			_rate_reached = true;
 		}
 
 		if (time_since_last_amplitude_increase >= 1_s) {
-			_amplitude_detection_state = _rate_reached_T1 ?
+			_amplitude_detection_state = _rate_reached ?
 						     amplitudeDetectionState::second_period :
 						     amplitudeDetectionState::increase_amplitude;
 
 			// reset flag
-			_rate_reached_T1 = false;
+			_rate_reached = false;
 		}
 
 		break;
 
 	case amplitudeDetectionState::second_period:
-		if (!_rate_reached_T2 && rate >= target_rate) {
-			_rate_reached_T2 = true;
+		if (!_rate_reached && rate >= target_rate) {
+			_rate_reached = true;
 		}
 
 		if (time_since_last_amplitude_increase >= 2_s) {
-			_amplitude_detection_state = _rate_reached_T2 ?
+			_amplitude_detection_state = _rate_reached ?
 						     amplitudeDetectionState::set_amplitude :
 						     amplitudeDetectionState::increase_amplitude;
 			// reset flag
-			_rate_reached_T2 = false;
+			_rate_reached = false;
 		}
 
 		break;

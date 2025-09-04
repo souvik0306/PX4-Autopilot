@@ -167,8 +167,7 @@ private:
 	float _signal_amp_max{5.0f};
 	float _signal_amp_step{0.1f};
 	float _target_rate{0.5f};
-	bool _rate_reached_T1{false};
-	bool _rate_reached_T2{false};
+	bool _rate_reached{false};
 	hrt_abstime _time_last_amplitude_increase{0};
 
 	matrix::Vector3f _angular_velocity{};
