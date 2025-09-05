@@ -166,8 +166,8 @@ private:
 
 	// Amplitude detection variables
 	float _signal_amp{0.1f};
-	float _signal_amp_max{5.0f};
-	float _signal_amp_step{0.1f};
+	static constexpr float _signal_amp_max{5.0f};
+	static constexpr float _signal_amp_step{0.1f};
 	float _target_rate{0.5f};
 	bool _rate_reached{false};
 	hrt_abstime _time_last_amplitude_increase{0};
@@ -217,7 +217,6 @@ private:
 		(ParamInt<px4::params::FW_AT_AXES>) _param_fw_at_axes,
 		(ParamBool<px4::params::FW_AT_START>) _param_fw_at_start,
 		(ParamInt<px4::params::FW_AT_MAN_AUX>) _param_fw_at_man_aux,
-		(ParamFloat<px4::params::FW_AT_SYSID_AMP>) _param_fw_at_sysid_amp,
 		(ParamInt<px4::params::FW_AT_APPLY>) _param_fw_at_apply,
 
 		(ParamFloat<px4::params::IMU_GYRO_CUTOFF>) _param_imu_gyro_cutoff,

@@ -59,19 +59,6 @@
 PARAM_DEFINE_INT32(FW_AT_START, 0);
 
 /**
- * Amplitude of the injected signal
- *
- * This parameter scales the signal sent to the
- * rate controller during system identification.
- *
- * @min 0.1
- * @max 6.0
- * @decimal 1
- * @group Autotune
- */
-PARAM_DEFINE_FLOAT(FW_AT_SYSID_AMP, 1.0);
-
-/**
  * Controls when to apply the new gains
  *
  * After the auto-tuning sequence is completed,

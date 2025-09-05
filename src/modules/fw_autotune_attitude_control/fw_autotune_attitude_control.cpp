@@ -741,7 +741,7 @@ void FwAutotuneAttitudeControl::updateAmplitudeDetectionState(const hrt_abstime 
 
 	case amplitudeDetectionState::set_amplitude:
 
-		_signal_amp = math::min(_signal_amp - _signal_amp_step, _signal_amp_max);
+		_signal_amp = math::constrain(_signal_amp - _signal_amp_step, 0.1f, _signal_amp_max);
 		_amplitude_detection_state = amplitudeDetectionState::complete;
 
 		break;
