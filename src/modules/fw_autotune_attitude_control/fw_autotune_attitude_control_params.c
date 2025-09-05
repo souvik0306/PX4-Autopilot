@@ -59,6 +59,42 @@
 PARAM_DEFINE_INT32(FW_AT_START, 0);
 
 /**
+ * Target roll rate
+ *
+ *
+ * @min 0.1
+ * @max 1.0
+ * @decimal 1
+ * @unit rad/s
+ * @group Autotune
+ */
+PARAM_DEFINE_FLOAT(FW_AT_RR_TARGET, 0.5f);
+
+/**
+ * Target pitch rate
+ *
+ *
+ * @min 0.1
+ * @max 1.0
+ * @decimal 1
+ * @unit rad/s
+ * @group Autotune
+ */
+PARAM_DEFINE_FLOAT(FW_AT_PR_TARGET, 0.5f);
+
+/**
+ * Target yaw rate
+ *
+ *
+ * @min 0.1
+ * @max 1.0
+ * @decimal 1
+ * @unit rad/s
+ * @group Autotune
+ */
+PARAM_DEFINE_FLOAT(FW_AT_YR_TARGET, 0.3f);
+
+/**
  * Controls when to apply the new gains
  *
  * After the auto-tuning sequence is completed,

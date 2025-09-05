@@ -218,6 +218,9 @@ private:
 		(ParamBool<px4::params::FW_AT_START>) _param_fw_at_start,
 		(ParamInt<px4::params::FW_AT_MAN_AUX>) _param_fw_at_man_aux,
 		(ParamInt<px4::params::FW_AT_APPLY>) _param_fw_at_apply,
+		(ParamFloat<px4::params::FW_AT_RR_TARGET>) _param_fw_at_rr_target,
+		(ParamFloat<px4::params::FW_AT_PR_TARGET>) _param_fw_at_pr_target,
+		(ParamFloat<px4::params::FW_AT_YR_TARGET>) _param_fw_at_yr_target,
 
 		(ParamFloat<px4::params::IMU_GYRO_CUTOFF>) _param_imu_gyro_cutoff,
 

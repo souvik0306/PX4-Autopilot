@@ -344,7 +344,7 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 			const float abs_roll_rate = fabsf(_angular_velocity(0));
 
-			updateAmplitudeDetectionState(now, abs_roll_rate, 0.5f);
+			updateAmplitudeDetectionState(now, abs_roll_rate, _param_fw_at_rr_target.get());
 
 			if (_amplitude_detection_state == amplitudeDetectionState::complete) {
 
@@ -393,7 +393,7 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 			const float abs_pitch_rate = fabsf(_angular_velocity(1));
 
-			updateAmplitudeDetectionState(now, abs_pitch_rate, 0.5f);
+			updateAmplitudeDetectionState(now, abs_pitch_rate, _param_fw_at_pr_target.get());
 
 			if (_amplitude_detection_state == amplitudeDetectionState::complete) {
 
@@ -440,7 +440,7 @@ void FwAutotuneAttitudeControl::updateStateMachine(hrt_abstime now)
 
 			const float abs_yaw_rate = fabsf(_angular_velocity(2));
 
-			updateAmplitudeDetectionState(now, abs_yaw_rate, 0.5f);
+			updateAmplitudeDetectionState(now, abs_yaw_rate, _param_fw_at_yr_target.get());
 
 			if (_amplitude_detection_state == amplitudeDetectionState::complete) {
 
@@ -743,6 +743,9 @@ void FwAutotuneAttitudeControl::updateAmplitudeDetectionState(const hrt_abstime 
 
 		_signal_amp = math::constrain(_signal_amp - _signal_amp_step, 0.1f, _signal_amp_max);
 		_amplitude_detection_state = amplitudeDetectionState::complete;
+
+		PX4_INFO("Amplitude Set: %.3f",
+			 (double)_signal_amp);
 
 		break;
 
