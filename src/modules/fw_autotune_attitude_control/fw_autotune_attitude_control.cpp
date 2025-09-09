@@ -762,36 +762,13 @@ const Vector3f FwAutotuneAttitudeControl::getAmplitudeDetectionSignal()
 	float signal = sinf(2.0f * M_PI_F * t);
 
 	signal *= _signal_amp;
-	Vector3f rate_sp{};
-
-	float signal_scaled = 0.0f;
-
-	if (_state == state::roll_amp_detection) {
-		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_r_tc.get()), math::radians(_param_fw_r_rmax.get()));
-		rate_sp(0) = signal_scaled - _signal_filter.getState();
-	}
-
-	if (_state ==  state::pitch_amp_detection) {
-		const float pitch_rate_max_deg = math::min(_param_fw_p_rmax_pos.get(), _param_fw_p_rmax_neg.get());
-		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_p_tc.get()), math::radians(pitch_rate_max_deg));
-		rate_sp(1) = signal_scaled - _signal_filter.getState();
-	}
-
-	if (_state == state::yaw_amp_detection) {
-		signal_scaled = math::min(signal, 1.f / (_param_fw_yr_ff.get() + _param_fw_yr_p.get()),
-					  math::radians(_param_fw_y_rmax.get()));
-		rate_sp(2) = signal_scaled - _signal_filter.getState();
-	}
-
-	_signal_filter.update(signal_scaled);
+	Vector3f rate_sp = scaleInputSignal(signal);
 
 	return rate_sp;
 }
 
 const Vector3f FwAutotuneAttitudeControl::getIdentificationSignal()
 {
-
-
 	const hrt_abstime now = hrt_absolute_time();
 	const float t = static_cast<float>(now - _state_start_time) * 1e-6f;
 	float signal = 0.0f;
@@ -836,25 +813,31 @@ const Vector3f FwAutotuneAttitudeControl::getIdentificationSignal()
 
 
 	signal *= _signal_amp;
+	Vector3f rate_sp = scaleInputSignal(signal);
+
+	return rate_sp;
+}
+
+const Vector3f FwAutotuneAttitudeControl::scaleInputSignal(const float signal)
+{
+	float signal_scaled = 0.f;
 	Vector3f rate_sp{};
 
-	float signal_scaled = 0.f;
-
-	if (_state == state::roll || _state == state::test) {
+	if (_state == state::roll_amp_detection || _state == state::roll || _state == state::test) {
 		// Scale the signal such that the attitude controller is
 		// able to cancel it completely at an attitude error of pi/8
 		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_r_tc.get()), math::radians(_param_fw_r_rmax.get()));
 		rate_sp(0) = signal_scaled - _signal_filter.getState();
 	}
 
-	if (_state ==  state::pitch || _state == state::test) {
+	if (_state == state::pitch_amp_detection || _state ==  state::pitch || _state == state::test) {
 		const float pitch_rate_max_deg = math::min(_param_fw_p_rmax_pos.get(), _param_fw_p_rmax_neg.get());
 		signal_scaled = math::min(signal * M_PI_F / (8.f * _param_fw_p_tc.get()), math::radians(pitch_rate_max_deg));
 		rate_sp(1) = signal_scaled - _signal_filter.getState();
 
 	}
 
-	if (_state ==  state::yaw) {
+	if (_state == state::yaw_amp_detection || _state ==  state::yaw) {
 		// Do not send a signal that produces more than a full deflection of the rudder
 		signal_scaled = math::min(signal, 1.f / (_param_fw_yr_ff.get() + _param_fw_yr_p.get()),
 					  math::radians(_param_fw_y_rmax.get()));

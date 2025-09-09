@@ -116,6 +116,7 @@ private:
 
 	const matrix::Vector3f getIdentificationSignal();
 	const matrix::Vector3f getAmplitudeDetectionSignal();
+	const matrix::Vector3f scaleInputSignal(const float signal);
 
 
 	uORB::SubscriptionCallbackWorkItem _vehicle_torque_setpoint_sub;
