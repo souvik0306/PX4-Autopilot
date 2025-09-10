@@ -44,7 +44,8 @@ Please continue reading for [upgrade instructions](#upgrade-guide).
 
 ### Control
 
-- TBD
+- Added new flight mode: Altitude Cruise. [Docs for multicopters are here](../flight_modes_mc/manual_altitude_cruise.md), for fixed-wing the mode behaves the same as Altitude but one is able to disable the manual control loss failsafe. ([Add new flight mode: Altitude Cruise
+](https://github.com/PX4/PX4-Autopilot/pull/25435)).
 
 ### Estimation
 
@@ -72,7 +73,10 @@ Please continue reading for [upgrade instructions](#upgrade-guide).
 
 ### Multi-Rotor
 
-- TBD
+- Removed parameters MPC_{XY/Z/YAW}_MAN_EXPO and use default value instead, as they were not deemed necessary anymore. ([Add new flight mode: Altitude Cruise
+](https://github.com/PX4/PX4-Autopilot/pull/25435)).
+- Renamed MPC_HOLD_DZ to MAN_DEADZONE to have it globally available in modes that allow for a dead zone. ([Add new flight mode: Altitude Cruise
+](https://github.com/PX4/PX4-Autopilot/pull/25435)).
 
 ### VTOL
 
