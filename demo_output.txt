@@ -1,0 +1,58 @@
+============================================================
+MAVROS IMU Topic Configuration Demonstration
+============================================================
+
+1. DEFAULT CONFIGURATION:
+------------------------------
+[INIT] Default IMU topic: mavros/imu/data
+[INFO] Using default IMU topic: mavros/imu/data
+[SUBSCRIBER] Created subscriber for topic: mavros/imu/data
+
+2. PROGRAMMATIC CONFIGURATION:
+------------------------------
+[INIT] Default IMU topic: mavros/imu/data
+[INFO] IMU topic configured to: custom_sensors/imu/data
+[INFO] Using default IMU topic: custom_sensors/imu/data
+[SUBSCRIBER] Created subscriber for topic: custom_sensors/imu/data
+
+3. RUNTIME RECONFIGURATION:
+------------------------------
+[INIT] Default IMU topic: mavros/imu/data
+[INFO] Using default IMU topic: mavros/imu/data
+[SUBSCRIBER] Created subscriber for topic: mavros/imu/data
+  Switching to backup IMU...
+[SUBSCRIBER] Unregistered subscriber for topic: mavros/imu/data
+[INFO] Unregistered IMU subscriber from: mavros/imu/data
+[SUBSCRIBER] Created subscriber for topic: backup_imu/data
+[INFO] Reconfigured IMU subscriber to: backup_imu/data
+  Switching to high-precision IMU...
+[SUBSCRIBER] Unregistered subscriber for topic: backup_imu/data
+[INFO] Unregistered IMU subscriber from: backup_imu/data
+[SUBSCRIBER] Created subscriber for topic: precision_imu/data
+[INFO] Reconfigured IMU subscriber to: precision_imu/data
+
+4. INHERITANCE-BASED CONFIGURATION:
+------------------------------
+[INIT] Default IMU topic: mavros/imu/data
+[INFO] Using default IMU topic: alternative_sensors/imu/data
+[SUBSCRIBER] Created subscriber for topic: alternative_sensors/imu/data
+
+============================================================
+CONFIGURATION SUMMARY
+============================================================
+
+Available configuration methods:
+• Default: Uses 'mavros/imu/data'
+• ROS Parameter: Set '~imu_topic' parameter
+• Programmatic: Call set_imu_topic() before setUp()
+• Runtime: Call reconfigure_imu_subscriber() anytime
+• Inheritance: Override imu_topic in constructor
+
+Use cases:
+• Testing with simulated IMU data
+• Switching between hardware/software IMU
+• Multi-IMU system validation
+• Backup IMU failover testing
+
+All changes maintain backward compatibility!
+Existing tests continue to work without modification.
