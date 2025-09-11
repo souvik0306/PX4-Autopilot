@@ -343,7 +343,7 @@ The following sections provide a list of supported setpoint types:
 - [GotoSetpointType](#go-to-setpoint-gotosetpointtype): Smooth position and (optionally) heading control
 - [FwLateralLongitudinalSetpointType](#fixed-wing-lateral-and-longitudinal-setpoint-fwlaterallongitudinalsetpointtype): <Badge type="tip" text="main (planned for: PX4 v1.17)" /> Direct control of lateral and longitudinal fixed wing dynamics
 - [DirectActuatorsSetpointType](#direct-actuator-control-setpoint-directactuatorssetpointtype): Direct control of motors and flight surface servo setpoints
-- (Experimental) [Rover Setpoints](#experimental-rover-setpoints): Direct access to rover control setpoints (Position, Speed, Attitude, Rate, Throttle and Steering).
+- [Rover Setpoints](#experimental-rover-setpoints): <Badge type="tip" text="main (planned for: PX4 v1.17)" /> Direct access to rover control setpoints (Position, Speed, Attitude, Rate, Throttle and Steering).
 
 :::tip
 The other setpoint types are currently experimental, and can be found in: [px4_ros2/control/setpoint_types/experimental](https://github.com/Auterion/px4-ros2-interface-lib/tree/main/px4_ros2_cpp/include/px4_ros2/control/setpoint_types/experimental).
@@ -352,6 +352,8 @@ You can add your own setpoint types by adding a class that inherits from `px4_ro
 :::
 
 #### Go-to Setpoint (GotoSetpointType)
+
+<Badge type="warning" text="Multicopter only" />
 
 ::: info
 This setpoint type is currently only supported for multicopters.
@@ -544,8 +546,11 @@ For example to control a quadrotor, you need to set the first 4 motors according
 If you want to control an actuator that does not control the vehicle's motion, but for example a payload servo, see [below](#controlling-an-independent-actuator-servo).
 :::
 
-#### (Experimental) Rover Setpoints
-The rover modules use a hierarchical structure to propogate setpoints:
+#### Rover Setpoints
+
+<Badge type="tip" text="main (planned for: PX4 v1.17)" /> <Badge type="warning" text="Experimental" />
+
+The rover modules use a hierarchical structure to propagate setpoints:
 
 ![Rover Control Structure](../../assets/middleware/ros2/px4_ros2_interface_lib/rover_control_structure.png)
 
@@ -553,7 +558,7 @@ The rover modules use a hierarchical structure to propogate setpoints:
 The "highest" setpoint that is provided will be used within the PX4 rover modules to generate the setpoints that are below it (Overriding them!).
 With this hierarchy there are clear rules for providing a valid control input:
 
-- Provide a position setpoint **or**
+- Provide a position setpoint, **or**
 - One of the setpoints on the "left" (speed **or** throttle) **and** one of the setpoints on the "right" (attitude, rate **or** steering). All combinations of "left" and "right" setpoints are valid.
 
 For ease of use we expose these valid combinations as new SetpointTypes.

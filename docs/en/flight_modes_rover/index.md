@@ -28,7 +28,7 @@ Selecting any other mode than those listed below will either stop the rover or c
 
 ## Apps & API
 
-The rover modules have been tested and integrated with a subset of the available [Apps & API](../middleware/index.md) methods. \
+The rover modules have been tested and integrated with a subset of the available [Apps & API](../middleware/index.md) methods.
 We specifically provide guides for using [ROS 2](../ros2/index.md) to interface a companion computer with PX4 via [uXRCE-DDS](../middleware/uxrce_dds.md).
 
 | Method                                                          | Description                                                                                                                                       |
