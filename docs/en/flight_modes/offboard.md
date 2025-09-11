@@ -124,7 +124,7 @@ The following setpoints are supported by the rover modules
 
 #### Rover Setpoints
 
-The rover modules use a hierarchical structure to propogate setpoints:
+The rover modules use a hierarchical structure to propagate setpoints:
 
 ![Rover Control Structure](../../assets/middleware/ros2/px4_ros2_interface_lib/rover_control_structure.png)
 
@@ -135,7 +135,7 @@ With this hierarchy there are clear rules for providing a valid control input:
 - One of the setpoints on the "left" (speed **or** throttle) **and** one of the setpoints on the "right" (attitude, rate **or** steering).
   All combinations of "left" and "right" setpoints are valid.
 
-The following are all valid setpoint combinations and their respective control flags that must be set trough [OffboardControlMode](../msg_docs/OffboardControlMode.md) (set all others to _false_).
+The following are all valid setpoint combinations and their respective control flags that must be set through [OffboardControlMode](../msg_docs/OffboardControlMode.md) (set all others to _false_).
 Additionally, for some combinations we require certain setpoints to be published with `NAN` values so that the setpoints of interest are not overridden by the rover module (due to the hierarchy above).
 &check; are the relevant setpoints we publish, and &cross; are the setpoint that need to be published with `NAN` values.
 
@@ -155,7 +155,7 @@ If you intend to use the rover setpoints, we recommend using the [PX4 ROS 2 Inte
 
 #### Actuator Setpoints
 
-The actuators can be direclty controlled using [ActuatorMotors](../msg_docs/ActuatorMotors.md) and [ActuatorServos](../msg_docs/ActuatorServos.md).
+The actuators can be directly controlled using [ActuatorMotors](../msg_docs/ActuatorMotors.md) and [ActuatorServos](../msg_docs/ActuatorServos.md).
 In [OffboardControlMode](../msg_docs/OffboardControlMode.md) set `direct_actuator` to _true_ and all other flags to _false_.
 
 ::: info
