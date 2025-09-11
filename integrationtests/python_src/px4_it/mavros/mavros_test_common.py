@@ -17,6 +17,8 @@ from six.moves import xrange
 class MavrosTestCommon(unittest.TestCase):
     def __init__(self, *args):
         super(MavrosTestCommon, self).__init__(*args)
+        # Default IMU topic - can be overridden by subclasses
+        self.imu_topic = 'mavros/imu/data'
 
     def setUp(self):
         self.altitude = Altitude()
@@ -28,6 +30,13 @@ class MavrosTestCommon(unittest.TestCase):
         self.mission_wp = WaypointList()
         self.state = State()
         self.mav_type = None
+
+        # Configure IMU topic from ROS parameter if available
+        if rospy.has_param('~imu_topic'):
+            self.imu_topic = rospy.get_param('~imu_topic')
+            rospy.loginfo("Using custom IMU topic: {}".format(self.imu_topic))
+        else:
+            rospy.loginfo("Using default IMU topic: {}".format(self.imu_topic))
 
         self.sub_topics_ready = {
             key: False
@@ -69,7 +78,7 @@ class MavrosTestCommon(unittest.TestCase):
         self.global_pos_sub = rospy.Subscriber('mavros/global_position/global',
                                                NavSatFix,
                                                self.global_position_callback)
-        self.imu_data_sub = rospy.Subscriber('mavros/imu/data',
+        self.imu_data_sub = rospy.Subscriber(self.imu_topic,
                                                Imu,
                                                self.imu_data_callback)
         self.home_pos_sub = rospy.Subscriber('mavros/home_position/home',
@@ -85,6 +94,42 @@ class MavrosTestCommon(unittest.TestCase):
 
     def tearDown(self):
         self.log_topic_vars()
+
+    def set_imu_topic(self, topic_name):
+        """
+        Configure the IMU topic source.
+        
+        Args:
+            topic_name (str): The ROS topic name to subscribe to for IMU data
+            
+        Note:
+            This should be called before setUp() to take effect, or 
+            call reconfigure_imu_subscriber() after setUp() to change at runtime.
+        """
+        self.imu_topic = topic_name
+        rospy.loginfo("IMU topic configured to: {}".format(self.imu_topic))
+
+    def reconfigure_imu_subscriber(self, new_topic):
+        """
+        Reconfigure the IMU subscriber to use a different topic at runtime.
+        
+        Args:
+            new_topic (str): The new ROS topic name to subscribe to for IMU data
+        """
+        # Unregister the current subscriber
+        if hasattr(self, 'imu_data_sub'):
+            self.imu_data_sub.unregister()
+            rospy.loginfo("Unregistered IMU subscriber from: {}".format(self.imu_topic))
+        
+        # Update the topic and create new subscriber
+        self.imu_topic = new_topic
+        self.imu_data_sub = rospy.Subscriber(self.imu_topic,
+                                               Imu,
+                                               self.imu_data_callback)
+        rospy.loginfo("Reconfigured IMU subscriber to: {}".format(self.imu_topic))
+        
+        # Reset the ready flag to wait for new data
+        self.sub_topics_ready['imu'] = False
 
     #
     # Callback functions
