@@ -98,12 +98,12 @@ class MavrosTestCommon(unittest.TestCase):
     def set_imu_topic(self, topic_name):
         """
         Configure the IMU topic source.
-        
+
         Args:
             topic_name (str): The ROS topic name to subscribe to for IMU data
-            
+
         Note:
-            This should be called before setUp() to take effect, or 
+            This should be called before setUp() to take effect, or
             call reconfigure_imu_subscriber() after setUp() to change at runtime.
         """
         self.imu_topic = topic_name
@@ -112,7 +112,7 @@ class MavrosTestCommon(unittest.TestCase):
     def reconfigure_imu_subscriber(self, new_topic):
         """
         Reconfigure the IMU subscriber to use a different topic at runtime.
-        
+
         Args:
             new_topic (str): The new ROS topic name to subscribe to for IMU data
         """
@@ -120,14 +120,14 @@ class MavrosTestCommon(unittest.TestCase):
         if hasattr(self, 'imu_data_sub'):
             self.imu_data_sub.unregister()
             rospy.loginfo("Unregistered IMU subscriber from: {}".format(self.imu_topic))
-        
+
         # Update the topic and create new subscriber
         self.imu_topic = new_topic
         self.imu_data_sub = rospy.Subscriber(self.imu_topic,
                                                Imu,
                                                self.imu_data_callback)
         rospy.loginfo("Reconfigured IMU subscriber to: {}".format(self.imu_topic))
-        
+
         # Reset the ready flag to wait for new data
         self.sub_topics_ready['imu'] = False
 
@@ -503,3 +503,7 @@ class MavrosTestCommon(unittest.TestCase):
         rospy.loginfo("========================")
         rospy.loginfo("state:\n{}".format(self.state))
         rospy.loginfo("========================")
+
+test_obj = MavrosTestCommon()
+test_obj.set_imu_topic('corrected_imu/data')
+test_obj.setUp()
