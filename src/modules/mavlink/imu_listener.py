@@ -4,6 +4,7 @@ import numpy as np
 import onnxruntime as ort
 import pickle
 import os
+import rospkg
 from sensor_msgs.msg import Imu
 import sys
 
@@ -20,8 +21,6 @@ OVERLAP  = INTERVAL + 1  # Number of samples kept between windows for overlap
 DEFAULT_IMU_TOPIC = "/mavros/imu/data"
 DEFAULT_CORRECTED_TOPIC = "/corrected_imu"
 DEFAULT_HIL_TOPIC = "/mavros/hil_sensor/imu"
-DEFAULT_ONNX_PATH = "/path/to/model.onnx"
-DEFAULT_RESULTS_PATH = "/tmp/imu_results.pkl"
 
 # HIL_SENSOR field bitmasks from mavlink_receiver.h
 HIL_SENSOR_ACCEL = 0b111
@@ -126,6 +125,7 @@ class IMUInferenceNode:
         self.correction_counter = 0
         self.onnx_model = None
         self.corrected_imu_pub = None
+        self.pkg_path = ""
         self.onnx_path = ""
         self.pickle_path = ""
         self.last_msg = None
@@ -211,11 +211,23 @@ class IMUInferenceNode:
         rospy.loginfo(f"[INIT] Node started at ROS time: {rospy.Time.now().to_sec():.2f}")
         rospy.loginfo(f"[INFO] Python version: {sys.version}")
 
-        self.onnx_path = rospy.get_param(
-            "~onnx_path",
-            rospy.get_param("~onnx_model_path", DEFAULT_ONNX_PATH),
+        try:
+            rp = rospkg.RosPack()
+            self.pkg_path = rp.get_path("imu_listener_pkg")
+        except rospkg.ResourceNotFound as e:
+            rospy.logerr(f"Failed to locate imu_listener_pkg: {e}")
+            rospy.signal_shutdown("Required package not found.")
+            return
+
+        default_onnx_path = os.path.join(
+            self.pkg_path, "models", "airimu_euroc.onnx"
         )
-        self.pickle_path = rospy.get_param("~results_path", DEFAULT_RESULTS_PATH)
+        default_results_path = os.path.join(
+            self.pkg_path, "results", "timeit_sim_new_net_output.pickle"
+        )
+
+        self.onnx_path = rospy.get_param("~onnx_path", default_onnx_path)
+        self.pickle_path = rospy.get_param("~results_path", default_results_path)
         imu_topic = rospy.get_param("~imu_topic", DEFAULT_IMU_TOPIC)
         corrected_topic = rospy.get_param("~corrected_topic", DEFAULT_CORRECTED_TOPIC)
         hil_topic = rospy.get_param("~hil_topic", DEFAULT_HIL_TOPIC)
