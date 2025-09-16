@@ -14,6 +14,16 @@ SEQLEN   = 50        # Number of IMU samples per inference window
 INTERVAL = 9          # Interval between inference windows
 OVERLAP  = INTERVAL + 1  # Number of samples kept between windows for overlap
 
+PKG_NAME = "imu_listener_pkg"
+PKG_ENV_VAR = "IMU_LISTENER_PKG_PATH"
+MODEL_ENV_VAR = "IMU_LISTENER_ONNX_PATH"
+RESULTS_ENV_VAR = "IMU_LISTENER_RESULTS_PATH"
+
+
+def _normalize_path(path: str) -> str:
+    """Expand environment variables and return an absolute path."""
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
+
 class IMUBuffer:
     """Buffer for storing IMU data and managing inference windows."""
     def __init__(self, seqlen, overlap):
@@ -80,19 +90,65 @@ class CorrectedIMUPublisher:
 class IMUInferenceNode:
     """Main node for IMU inference and publishing corrected data."""
     def __init__(self):
-        rp = rospkg.RosPack()
-        self.pkg_path = rp.get_path("imu_listener_pkg")
-        self.onnx_path   = os.path.join(self.pkg_path, "models", "airimu_euroc.onnx")
-        self.pickle_path = os.path.join(self.pkg_path, "results", "timeit_sim_new_net_output.pickle")
+        self.pkg_path = self._resolve_pkg_path()
+        self.onnx_path = self._resolve_onnx_path()
+        self.pickle_path = self._resolve_results_path()
         self.buffer = IMUBuffer(SEQLEN, OVERLAP)
         self.results = []
         self.correction_counter = 0
         self.onnx_model = None
         self.corrected_imu_pub = CorrectedIMUPublisher("/corrected_imu")
 
+    def _resolve_pkg_path(self):
+        env_path = os.environ.get(PKG_ENV_VAR)
+        if env_path:
+            return _normalize_path(env_path)
+
+        try:
+            rp = rospkg.RosPack()
+            return _normalize_path(rp.get_path(PKG_NAME))
+        except rospkg.ResourceNotFound:
+            return None
+
+    def _resolve_onnx_path(self):
+        env_path = os.environ.get(MODEL_ENV_VAR)
+        if env_path:
+            return _normalize_path(env_path)
+
+        if self.pkg_path:
+            return _normalize_path(os.path.join(self.pkg_path, "models", "airimu_euroc.onnx"))
+
+        return None
+
+    def _resolve_results_path(self):
+        env_path = os.environ.get(RESULTS_ENV_VAR)
+        if env_path:
+            return _normalize_path(env_path)
+
+        if self.pkg_path:
+            return _normalize_path(
+                os.path.join(self.pkg_path, "results", "timeit_sim_new_net_output.pickle")
+            )
+
+        return None
+
     def check_files(self):
+        if not self.onnx_path:
+            rospy.logerr(
+                "ONNX model path could not be resolved. Set %s or ensure the %s package is available (override package path with %s)."
+                % (MODEL_ENV_VAR, PKG_NAME, PKG_ENV_VAR)
+            )
+            return False
+
         if not os.path.isfile(self.onnx_path):
             rospy.logerr(f"ONNX model file not found: {self.onnx_path}")
+            return False
+
+        if not self.pickle_path:
+            rospy.logerr(
+                "Results output path could not be resolved. Set %s or ensure the %s package is available (override package path with %s)."
+                % (RESULTS_ENV_VAR, PKG_NAME, PKG_ENV_VAR)
+            )
             return False
         return True
 
@@ -114,6 +170,9 @@ class IMUInferenceNode:
     def save_results(self):
         """Save inference results to a pickle file."""
         try:
+            if not self.pickle_path:
+                rospy.logerr("Cannot save results: pickle path is undefined.")
+                return
             os.makedirs(os.path.dirname(self.pickle_path), exist_ok=True)
             with open(self.pickle_path, "wb") as f:
                 pickle.dump(self.results, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -168,6 +227,9 @@ class IMUInferenceNode:
         rospy.init_node("imu_inference_node")
         rospy.loginfo(f"[INIT] Node started at ROS time: {rospy.Time.now().to_sec():.2f}")
         rospy.loginfo(f"[INFO] Python version: {sys.version}")
+        rospy.loginfo(f"[CONFIG] Package path: {self.pkg_path}")
+        rospy.loginfo(f"[CONFIG] ONNX model path: {self.onnx_path}")
+        rospy.loginfo(f"[CONFIG] Results pickle path: {self.pickle_path}")
 
         if not self.check_files():
             rospy.signal_shutdown("Required files missing.")
