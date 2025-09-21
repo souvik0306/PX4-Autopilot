@@ -100,18 +100,18 @@ class HilSensorPublisher:
         hil_msg.header.stamp = stamp
         hil_msg.header.frame_id = "imu_link"
 
-        hil_msg.xacc = float(corrected_acc[0])
-        hil_msg.yacc = float(corrected_acc[1])
-        hil_msg.zacc = float(corrected_acc[2])
+        hil_msg.acc.x = float(corrected_acc[0])
+        hil_msg.acc.y = float(corrected_acc[1])
+        hil_msg.acc.z = float(corrected_acc[2])
 
-        hil_msg.xgyro = float(corrected_gyro[0])
-        hil_msg.ygyro = float(corrected_gyro[1])
-        hil_msg.zgyro = float(corrected_gyro[2])
+        hil_msg.gyro.x = float(corrected_gyro[0])
+        hil_msg.gyro.y = float(corrected_gyro[1])
+        hil_msg.gyro.z = float(corrected_gyro[2])
 
         # No magnetometer correction available yet; publish zeros in body frame.
-        hil_msg.xmag = 0.0
-        hil_msg.ymag = 0.0
-        hil_msg.zmag = 0.0
+        hil_msg.mag.x = 0.0
+        hil_msg.mag.y = 0.0
+        hil_msg.mag.z = 0.0
 
         hil_msg.abs_pressure = 0.0
         hil_msg.diff_pressure = 0.0
