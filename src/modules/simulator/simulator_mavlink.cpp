@@ -219,18 +219,20 @@ void Simulator::send_controls()
 
 void Simulator::update_sensors(const hrt_abstime &time, const mavlink_hil_sensor_t &sensors)
 {
-	// temperature only updated with baro
-	if ((sensors.fields_updated & SensorSource::BARO) == SensorSource::BARO) {
-		if (PX4_ISFINITE(sensors.temperature)) {
-			_px4_mag_0.set_temperature(sensors.temperature);
-			_px4_mag_1.set_temperature(sensors.temperature);
+        const bool hitl_active = (_param_sys_hitl.get() == 1);
+
+        // temperature only updated with baro
+        if ((sensors.fields_updated & SensorSource::BARO) == SensorSource::BARO) {
+                if (PX4_ISFINITE(sensors.temperature)) {
+                        _px4_mag_0.set_temperature(sensors.temperature);
+                        _px4_mag_1.set_temperature(sensors.temperature);
 
 			_sensors_temperature = sensors.temperature;
 		}
 	}
 
 	// accel
-	if ((sensors.fields_updated & SensorSource::ACCEL) == SensorSource::ACCEL) {
+        if (!hitl_active && (sensors.fields_updated & SensorSource::ACCEL) == SensorSource::ACCEL) {
 		for (int i = 0; i < ACCEL_COUNT_MAX; i++) {
 			if (i == 0) {
 				// accel 0 is simulated FIFO
@@ -270,7 +272,7 @@ void Simulator::update_sensors(const hrt_abstime &time, const mavlink_hil_sensor
 	}
 
 	// gyro
-	if ((sensors.fields_updated & SensorSource::GYRO) == SensorSource::GYRO) {
+        if (!hitl_active && (sensors.fields_updated & SensorSource::GYRO) == SensorSource::GYRO) {
 		for (int i = 0; i < GYRO_COUNT_MAX; i++) {
 			if (i == 0) {
 				// gyro 0 is simulated FIFO

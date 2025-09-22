@@ -53,6 +53,7 @@
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 #include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
+#include <lib/drivers/device/Device.hpp>
 #include <lib/systemlib/mavlink_log.h>
 #include <px4_platform_common/module_params.h>
 #include <uORB/Publication.hpp>
@@ -106,6 +107,7 @@
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_odometry.h>
 #include <uORB/topics/vehicle_rates_setpoint.h>
+#include <uORB/topics/vehicle_imu.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/vehicle_trajectory_bezier.h>
 #include <uORB/topics/vehicle_trajectory_waypoint.h>
@@ -366,7 +368,12 @@ private:
 	};
 	PX4Accelerometer *_px4_accel{nullptr};
 	PX4Gyroscope *_px4_gyro{nullptr};
-	PX4Magnetometer *_px4_mag{nullptr};
+        PX4Magnetometer *_px4_mag{nullptr};
+
+        uORB::PublicationMulti<vehicle_imu_s> _vehicle_imu_pub{ORB_ID(vehicle_imu)};
+
+        device::Device::DeviceId _hil_imu_device_id{};
+        uint64_t _hil_imu_last_timestamp_sample{0};
 
 	float _global_local_alt0{NAN};
 	MapProjection _global_local_proj_ref{};
@@ -409,11 +416,12 @@ private:
 	float _param_ekf2_min_rng{NAN};
 	float _param_ekf2_rng_a_hmax{NAN};
 
-	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::BAT_CRIT_THR>)     _param_bat_crit_thr,
-		(ParamFloat<px4::params::BAT_EMERGEN_THR>)  _param_bat_emergen_thr,
-		(ParamFloat<px4::params::BAT_LOW_THR>)      _param_bat_low_thr
-	);
+        DEFINE_PARAMETERS(
+                (ParamFloat<px4::params::BAT_CRIT_THR>)     _param_bat_crit_thr,
+                (ParamFloat<px4::params::BAT_EMERGEN_THR>)  _param_bat_emergen_thr,
+                (ParamFloat<px4::params::BAT_LOW_THR>)      _param_bat_low_thr,
+                (ParamInt<px4::params::SYS_HITL>)           _param_sys_hitl
+        );
 
 	// Disallow copy construction and move assignment.
 	MavlinkReceiver(const MavlinkReceiver &) = delete;
