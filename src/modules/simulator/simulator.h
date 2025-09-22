@@ -299,9 +299,10 @@ private:
 
 	int _lockstep_component{-1};
 
-	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::MAV_TYPE>) _param_mav_type,
-		(ParamInt<px4::params::MAV_SYS_ID>) _param_mav_sys_id,
-		(ParamInt<px4::params::MAV_COMP_ID>) _param_mav_comp_id
-	)
+        DEFINE_PARAMETERS(
+                (ParamInt<px4::params::MAV_TYPE>) _param_mav_type,
+                (ParamInt<px4::params::MAV_SYS_ID>) _param_mav_sys_id,
+                (ParamInt<px4::params::MAV_COMP_ID>) _param_mav_comp_id,
+                (ParamInt<px4::params::SYS_HITL>) _param_sys_hitl
+        )
 };

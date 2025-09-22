@@ -62,6 +62,7 @@
 #include "mavlink_receiver.h"
 
 #include <lib/drivers/device/Device.hpp> // For DeviceId union
+#include <drivers/drv_sensor.h>
 
 #ifdef CONFIG_NET
 #define MAVLINK_RECEIVER_NET_ADDED_STACK 1360
@@ -2246,10 +2247,65 @@ MavlinkReceiver::get_message_interval(int msgId)
 void
 MavlinkReceiver::handle_message_hil_sensor(mavlink_message_t *msg)
 {
-	mavlink_hil_sensor_t hil_sensor;
-	mavlink_msg_hil_sensor_decode(msg, &hil_sensor);
+        mavlink_hil_sensor_t hil_sensor;
+        mavlink_msg_hil_sensor_decode(msg, &hil_sensor);
 
-	const uint64_t timestamp = hrt_absolute_time();
+        const uint64_t timestamp = hrt_absolute_time();
+
+	const bool hitl_active = (_param_sys_hitl.get() == 1);
+
+	if (!hitl_active) {
+		_hil_imu_last_timestamp_sample = 0;
+		_hil_imu_device_id.devid = 0;
+	}
+
+	if (hitl_active &&
+	    (hil_sensor.fields_updated & SensorSource::ACCEL) == SensorSource::ACCEL &&
+	    (hil_sensor.fields_updated & SensorSource::GYRO) == SensorSource::GYRO) {
+
+		const uint64_t timestamp_sample = (hil_sensor.time_usec > 0) ? hil_sensor.time_usec : timestamp;
+
+		if (_hil_imu_device_id.devid == 0) {
+			_hil_imu_device_id.devid_s.bus_type = device::Device::DeviceBusType::DeviceBusType_MAVLINK;
+			_hil_imu_device_id.devid_s.address = msg->sysid;
+			_hil_imu_device_id.devid_s.devtype = DRV_IMU_DEVTYPE_SIM;
+		}
+
+		if (_hil_imu_last_timestamp_sample == 0 || timestamp_sample <= _hil_imu_last_timestamp_sample) {
+			_hil_imu_last_timestamp_sample = timestamp_sample;
+
+		} else {
+			const uint64_t delta_us = timestamp_sample - _hil_imu_last_timestamp_sample;
+
+			if (delta_us > 0) {
+				vehicle_imu_s vehicle_imu{};
+
+				vehicle_imu.timestamp = timestamp;
+				vehicle_imu.timestamp_sample = timestamp_sample;
+				vehicle_imu.accel_device_id = _hil_imu_device_id.devid;
+				vehicle_imu.gyro_device_id = _hil_imu_device_id.devid;
+
+				const float dt = static_cast<float>(delta_us) * 1e-6f;
+				vehicle_imu.delta_angle[0] = hil_sensor.xgyro * dt;
+				vehicle_imu.delta_angle[1] = hil_sensor.ygyro * dt;
+				vehicle_imu.delta_angle[2] = hil_sensor.zgyro * dt;
+
+				vehicle_imu.delta_velocity[0] = hil_sensor.xacc * dt;
+				vehicle_imu.delta_velocity[1] = hil_sensor.yacc * dt;
+				vehicle_imu.delta_velocity[2] = hil_sensor.zacc * dt;
+
+				const uint16_t integration_us = (delta_us > UINT16_MAX) ? UINT16_MAX :
+						      static_cast<uint16_t>(delta_us);
+				vehicle_imu.delta_angle_dt = integration_us;
+				vehicle_imu.delta_velocity_dt = integration_us;
+
+				_vehicle_imu_pub.publish(vehicle_imu);
+			}
+
+			_hil_imu_last_timestamp_sample = timestamp_sample;
+		}
+	}
+
 
 	// temperature only updated with baro
 	float temperature = NAN;
@@ -2259,10 +2315,10 @@ MavlinkReceiver::handle_message_hil_sensor(mavlink_message_t *msg)
 	}
 
 	// gyro
-	if ((hil_sensor.fields_updated & SensorSource::GYRO) == SensorSource::GYRO) {
-		if (_px4_gyro == nullptr) {
-			// 1310988: DRV_IMU_DEVTYPE_SIM, BUS: 1, ADDR: 1, TYPE: SIMULATION
-			_px4_gyro = new PX4Gyroscope(1310988);
+        if (!hitl_active && (hil_sensor.fields_updated & SensorSource::GYRO) == SensorSource::GYRO) {
+                if (_px4_gyro == nullptr) {
+                        // 1310988: DRV_IMU_DEVTYPE_SIM, BUS: 1, ADDR: 1, TYPE: SIMULATION
+                        _px4_gyro = new PX4Gyroscope(1310988);
 		}
 
 		if (_px4_gyro != nullptr) {
@@ -2275,10 +2331,10 @@ MavlinkReceiver::handle_message_hil_sensor(mavlink_message_t *msg)
 	}
 
 	// accelerometer
-	if ((hil_sensor.fields_updated & SensorSource::ACCEL) == SensorSource::ACCEL) {
-		if (_px4_accel == nullptr) {
-			// 1310988: DRV_IMU_DEVTYPE_SIM, BUS: 1, ADDR: 1, TYPE: SIMULATION
-			_px4_accel = new PX4Accelerometer(1310988);
+        if (!hitl_active && (hil_sensor.fields_updated & SensorSource::ACCEL) == SensorSource::ACCEL) {
+                if (_px4_accel == nullptr) {
+                        // 1310988: DRV_IMU_DEVTYPE_SIM, BUS: 1, ADDR: 1, TYPE: SIMULATION
+                        _px4_accel = new PX4Accelerometer(1310988);
 		}
 
 		if (_px4_accel != nullptr) {
