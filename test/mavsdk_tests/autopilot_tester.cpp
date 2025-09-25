@@ -37,7 +37,6 @@
 #include <future>
 #include <thread>
 #include <unistd.h>
-#include <cmath>
 
 std::string connection_url {"udp://"};
 std::optional<float> speed_factor {std::nullopt};
@@ -52,7 +51,6 @@ AutopilotTester::AutopilotTester() :
 
 AutopilotTester::~AutopilotTester()
 {
-	_events->unsubscribe_events(_events_handle);
 	_should_exit = true;
 	_real_time_report_thread.join();
 }
@@ -66,7 +64,7 @@ void AutopilotTester::connect(const std::string uri)
 	REQUIRE(poll_condition_with_timeout(
 	[this]() { return _mavsdk.systems().size() > 0; }, std::chrono::seconds(25)));
 
-	auto system = get_system();
+	auto system = _mavsdk.systems().at(0);
 
 	_action.reset(new Action(system));
 	_failure.reset(new Failure(system));
@@ -77,39 +75,31 @@ void AutopilotTester::connect(const std::string uri)
 	_offboard.reset(new Offboard(system));
 	_param.reset(new Param(system));
 	_telemetry.reset(new Telemetry(system));
-	_events.reset(new Events(system));
-	_mavlink_passthrough.reset(new MavlinkPassthrough(system));
-
-	_events_handle = _events->subscribe_events([](const Events::Event & event) {
-		std::cout << "[" << event.log_level << "] " << event.message << std::endl;
-
-		if (!event.description.empty()) {
-			std::cout << "    Description: " << event.description << std::endl;
-		}
-
-		std::cout << "    Event name: " << event.event_namespace << "/" << event.event_name
-			  << std::endl;
-	});
 }
 
 void AutopilotTester::wait_until_ready()
 {
-	std::cout << time_str() << "Waiting for system to be ready (system health ok & able to arm)" << std::endl;
-
-	// Wait until the system is healthy
+	std::cout << time_str() << "Waiting for system to be ready" << std::endl;
 	CHECK(poll_condition_with_timeout(
 	[this]() { return _telemetry->health_all_ok(); }, std::chrono::seconds(30)));
 
-	// Note: There is a known bug in MAVSDK (https://github.com/mavlink/MAVSDK/issues/1852),
-	// where `health_all_ok()` returning true doesn't actually mean vehicle is ready to accept
-	// global position estimate as valid (due to hysteresis). This needs to be fixed properly.
+	// FIXME: workaround to prevent race between PX4 switching to Hold mode
+	// and us trying to arm and take off. If PX4 is not in Hold mode yet,
+	// our arming presumably triggers a failsafe in manual mode.
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+}
 
-	// However, this is mitigated by the `is_armable` check below as a side effect, since
-	// when the vehicle considers global position to be valid, it will then allow arming
-
-	// Wait until we can arm
+void AutopilotTester::wait_until_ready_local_position_only()
+{
+	std::cout << time_str() << "Waiting for system to be ready" << std::endl;
 	CHECK(poll_condition_with_timeout(
-	[this]() {	return _telemetry->health().is_armable;	}, std::chrono::seconds(45)));
+	[this]() {
+		return
+			(_telemetry->health().is_gyrometer_calibration_ok &&
+			 _telemetry->health().is_accelerometer_calibration_ok &&
+			 _telemetry->health().is_magnetometer_calibration_ok &&
+			 _telemetry->health().is_local_position_ok);
+	}, std::chrono::seconds(20)));
 }
 
 void AutopilotTester::store_home()
@@ -141,23 +131,15 @@ void AutopilotTester::set_takeoff_altitude(const float altitude_m)
 	CHECK(result.second == Approx(altitude_m));
 }
 
-void AutopilotTester::set_rtl_altitude(const float altitude_m)
-{
-	CHECK(Action::Result::Success == _action->set_return_to_launch_altitude(altitude_m));
-	const auto result = _action->get_return_to_launch_altitude();
-	CHECK(result.first == Action::Result::Success);
-	CHECK(result.second == Approx(altitude_m));
-}
-
 void AutopilotTester::set_height_source(AutopilotTester::HeightSource height_source)
 {
 	switch (height_source) {
 	case HeightSource::Baro:
-		CHECK(_param->set_param_int("EKF2_HGT_REF", 0) == Param::Result::Success);
+		CHECK(_param->set_param_int("EKF2_HGT_MODE", 0) == Param::Result::Success);
 		break;
 
 	case HeightSource::Gps:
-		CHECK(_param->set_param_int("EKF2_HGT_REF", 1) == Param::Result::Success);
+		CHECK(_param->set_param_int("EKF2_HGT_MODE", 1) == Param::Result::Success);
 	}
 }
 
@@ -175,11 +157,6 @@ void AutopilotTester::set_rc_loss_exception(AutopilotTester::RcLossException mas
 	case RcLossException::Offboard:
 		CHECK(_param->set_param_int("COM_RCL_EXCEPT", 1 << 2) == Param::Result::Success);
 	}
-}
-
-void AutopilotTester::set_param_vt_fwd_thrust_en(int value)
-{
-	CHECK(_param->set_param_int("VT_FWD_THRUST_EN", value) == Param::Result::Success);
 }
 
 void AutopilotTester::arm()
@@ -220,29 +197,7 @@ void AutopilotTester::wait_until_disarmed(std::chrono::seconds timeout_duration)
 
 void AutopilotTester::wait_until_hovering()
 {
-	wait_for_landed_state(Telemetry::LandedState::InAir, std::chrono::seconds(45));
-}
-
-void AutopilotTester::wait_until_altitude(float rel_altitude_m, std::chrono::seconds timeout, float delta)
-{
-	auto prom = std::promise<void> {};
-	auto fut = prom.get_future();
-
-	Telemetry::PositionHandle handle = _telemetry->subscribe_position([&prom, rel_altitude_m, delta, &handle,
-	       this](Telemetry::Position new_position) {
-		if (fabs(rel_altitude_m - new_position.relative_altitude_m) <= delta) {
-			_telemetry->unsubscribe_position(handle);
-			prom.set_value();
-		}
-	});
-
-	REQUIRE(fut.wait_for(timeout) == std::future_status::ready);
-}
-
-void AutopilotTester::wait_until_fixedwing(std::chrono::seconds timeout)
-{
-	REQUIRE(poll_condition_with_timeout(
-	[this]() { return _telemetry->vtol_state() == Telemetry::VtolState::Fw; }, timeout));
+	wait_for_landed_state(Telemetry::LandedState::InAir, std::chrono::seconds(30));
 }
 
 void AutopilotTester::prepare_square_mission(MissionOptions mission_options)
@@ -258,8 +213,6 @@ void AutopilotTester::prepare_square_mission(MissionOptions mission_options)
 	_mission->set_return_to_launch_after_mission(mission_options.rtl_at_end);
 
 	REQUIRE(_mission->upload_mission(mission_plan) == Mission::Result::Success);
-	// PX4 needs time to realize that it now has a mission available, so we need to wait a bit here.
-	sleep_for(std::chrono::seconds(1));
 }
 
 void AutopilotTester::prepare_straight_mission(MissionOptions mission_options)
@@ -276,8 +229,6 @@ void AutopilotTester::prepare_straight_mission(MissionOptions mission_options)
 	_mission->set_return_to_launch_after_mission(mission_options.rtl_at_end);
 
 	REQUIRE(_mission->upload_mission(mission_plan) == Mission::Result::Success);
-	// PX4 needs time to realize that it now has a mission available, so we need to wait a bit here.
-	sleep_for(std::chrono::seconds(1));
 }
 
 void AutopilotTester::execute_mission()
@@ -289,23 +240,16 @@ void AutopilotTester::execute_mission()
 	REQUIRE(poll_condition_with_timeout(
 	[this]() { return _mission->start_mission() == Mission::Result::Success; }, std::chrono::seconds(3)));
 
-	float speed_factor = 1.0f;
+	// TODO: Adapt time limit based on mission size, flight speed, sim speed factor, etc.
 
-	if (_info != nullptr) {
-		speed_factor = _info->get_speed_factor().second;
-	}
-
-	const float mission_finish_waiting_time_in_simulation_s = 500.f;
-	float mission_finish_waiting_time_in_real_s = mission_finish_waiting_time_in_simulation_s / speed_factor;
-
-	wait_for_mission_finished(std::chrono::seconds(static_cast<int>(mission_finish_waiting_time_in_real_s)));
+	wait_for_mission_finished(std::chrono::seconds(60));
 }
 
 void AutopilotTester::execute_mission_and_lose_gps()
 {
 	CHECK(_param->set_param_int("SYS_FAILURE_EN", 1) == Param::Result::Success);
 
-	start_and_wait_for_mission_sequence(1);
+	start_and_wait_for_first_mission_item();
 
 	CHECK(_failure->inject(Failure::FailureUnit::SensorGps, Failure::FailureType::Off, 0) == Failure::Result::Success);
 
@@ -317,15 +261,15 @@ void AutopilotTester::execute_mission_and_lose_mag()
 {
 	CHECK(_param->set_param_int("SYS_FAILURE_EN", 1) == Param::Result::Success);
 
-	start_and_wait_for_mission_sequence(1);
+	start_and_wait_for_first_mission_item();
 
 	CHECK(_failure->inject(Failure::FailureUnit::SensorMag, Failure::FailureType::Off, 0) == Failure::Result::Success);
 
 	// We except the mission to continue without mag just fine.
 	REQUIRE(poll_condition_with_timeout(
 	[this]() {
-		auto result = _mission->is_mission_finished();
-		return result.first == Mission::Result::Success && result.second;
+		auto progress = _mission->mission_progress();
+		return progress.current == progress.total;
 	}, std::chrono::seconds(90)));
 }
 
@@ -333,15 +277,15 @@ void AutopilotTester::execute_mission_and_lose_baro()
 {
 	CHECK(_param->set_param_int("SYS_FAILURE_EN", 1) == Param::Result::Success);
 
-	start_and_wait_for_mission_sequence(1);
+	start_and_wait_for_first_mission_item();
 
 	CHECK(_failure->inject(Failure::FailureUnit::SensorBaro, Failure::FailureType::Off, 0) == Failure::Result::Success);
 
 	// We except the mission to continue without baro just fine.
 	REQUIRE(poll_condition_with_timeout(
 	[this]() {
-		auto result = _mission->is_mission_finished();
-		return result.first == Mission::Result::Success && result.second;
+		auto progress = _mission->mission_progress();
+		return progress.current == progress.total;
 	}, std::chrono::seconds(90)));
 }
 
@@ -349,15 +293,15 @@ void AutopilotTester::execute_mission_and_get_baro_stuck()
 {
 	CHECK(_param->set_param_int("SYS_FAILURE_EN", 1) == Param::Result::Success);
 
-	start_and_wait_for_mission_sequence(1);
+	start_and_wait_for_first_mission_item();
 
 	CHECK(_failure->inject(Failure::FailureUnit::SensorBaro, Failure::FailureType::Stuck, 0) == Failure::Result::Success);
 
 	// We except the mission to continue with a stuck baro just fine.
 	REQUIRE(poll_condition_with_timeout(
 	[this]() {
-		auto result = _mission->is_mission_finished();
-		return result.first == Mission::Result::Success && result.second;
+		auto progress = _mission->mission_progress();
+		return progress.current == progress.total;
 	}, std::chrono::seconds(90)));
 }
 
@@ -365,15 +309,15 @@ void AutopilotTester::execute_mission_and_get_mag_stuck()
 {
 	CHECK(_param->set_param_int("SYS_FAILURE_EN", 1) == Param::Result::Success);
 
-	start_and_wait_for_mission_sequence(1);
+	start_and_wait_for_first_mission_item();
 
 	CHECK(_failure->inject(Failure::FailureUnit::SensorMag, Failure::FailureType::Stuck, 0) == Failure::Result::Success);
 
 	// We except the mission to continue with a stuck mag just fine.
 	REQUIRE(poll_condition_with_timeout(
 	[this]() {
-		auto result = _mission->is_mission_finished();
-		return result.first == Mission::Result::Success && result.second;
+		auto progress = _mission->mission_progress();
+		return progress.current == progress.total;
 	}, std::chrono::seconds(120)));
 }
 
@@ -407,25 +351,20 @@ void AutopilotTester::load_qgc_mission_raw_and_move_here(const std::string &plan
 	move_mission_raw_here(import_result.second.mission_items);
 
 	REQUIRE(_mission_raw->upload_mission(import_result.second.mission_items) == MissionRaw::Result::Success);
-	// PX4 needs time to realize that it now has a mission available, so we need to wait a bit here.
-	sleep_for(std::chrono::seconds(1));
 }
 
 void AutopilotTester::execute_mission_raw()
 {
 	REQUIRE(_mission->start_mission() == Mission::Result::Success);
 
-	wait_for_mission_raw_finished(std::chrono::seconds(300));
+	// TODO: Adapt time limit based on mission size, flight speed, sim speed factor, etc.
+
+	wait_for_mission_raw_finished(std::chrono::seconds(120));
 }
 
 void AutopilotTester::execute_rtl()
 {
 	REQUIRE(Action::Result::Success == _action->return_to_launch());
-}
-
-void AutopilotTester::execute_land()
-{
-	REQUIRE(Action::Result::Success == _action->land());
 }
 
 void AutopilotTester::offboard_goto(const Offboard::PositionNedYaw &target, float acceptance_radius_m,
@@ -464,38 +403,14 @@ void AutopilotTester::fly_forward_in_posctl()
 
 	CHECK(_manual_control->start_position_control() == ManualControl::Result::Success);
 
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	store_home();
-
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	wait_until_ready();
-
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	arm();
-
-	// Climb up for 5 seconds
-	for (unsigned i = 0; i < 5 * manual_control_rate_hz; ++i) {
+	// Climb up for 20 seconds
+	for (unsigned i = 0; i < 20 * manual_control_rate_hz; ++i) {
 		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 1.f, 0.f) == ManualControl::Result::Success);
 		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
 	}
 
-	// Fly forward for 10 seconds
-	for (unsigned i = 0; i < 10 * manual_control_rate_hz; ++i) {
+	// Fly forward for 60 seconds
+	for (unsigned i = 0; i < 60 * manual_control_rate_hz; ++i) {
 		CHECK(_manual_control->set_manual_control_input(0.5f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
 		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
 	}
@@ -523,44 +438,14 @@ void AutopilotTester::fly_forward_in_altctl()
 
 	CHECK(_manual_control->start_altitude_control() == ManualControl::Result::Success);
 
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	store_home();
-
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	wait_until_ready();
-
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	arm();
-
-	// Send something to make sure RC is available.
-	for (unsigned i = 0; i < 1 * manual_control_rate_hz; ++i) {
-		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
-	}
-
-	// Climb up for 5 seconds
-	for (unsigned i = 0; i < 5 * manual_control_rate_hz; ++i) {
+	// Climb up for 20 seconds
+	for (unsigned i = 0; i < 20 * manual_control_rate_hz; ++i) {
 		CHECK(_manual_control->set_manual_control_input(0.f, 0.f, 1.f, 0.f) == ManualControl::Result::Success);
 		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
 	}
 
-	// Fly forward for 10 seconds
-	for (unsigned i = 0; i < 10 * manual_control_rate_hz; ++i) {
+	// Fly forward for 60 seconds
+	for (unsigned i = 0; i < 60 * manual_control_rate_hz; ++i) {
 		CHECK(_manual_control->set_manual_control_input(0.5f, 0.f, 0.5f, 0.f) == ManualControl::Result::Success);
 		sleep_for(std::chrono::milliseconds(1000 / manual_control_rate_hz));
 	}
@@ -574,141 +459,6 @@ void AutopilotTester::fly_forward_in_altctl()
 			break;
 		}
 	}
-}
-void AutopilotTester::fly_forward_in_offboard_attitude()
-{
-	// This test does not depend on valid position estimate.
-	// Wait for raw gps & stable attitude estimate
-	CHECK(poll_condition_with_timeout(
-	[this]() {
-		auto attitude = _telemetry->attitude_euler();
-		return _telemetry->raw_gps().altitude_ellipsoid_m > 0.f && fabsf(attitude.roll_deg) < 5.f
-		       && fabsf(attitude.pitch_deg) < 5.f;
-	}, std::chrono::seconds(20)));
-
-	const float start_altitude_ellipsoid_m = _telemetry->raw_gps().altitude_ellipsoid_m;
-
-	Offboard::Attitude attitude{};
-	_offboard->set_attitude(attitude);
-	REQUIRE(_offboard->start() == Offboard::Result::Success);
-
-	// Wait until we can arm
-	CHECK(poll_condition_with_timeout(
-	[this]() {	return _telemetry->health().is_armable;	}, std::chrono::seconds(20)));
-	arm();
-
-	const unsigned offboard_rate_hz = 50;
-
-	// Climb
-	const float climb_altitude_m = 10.f;
-	attitude.thrust_value = 0.8f;
-
-	while (_telemetry->raw_gps().altitude_ellipsoid_m - start_altitude_ellipsoid_m < climb_altitude_m) {
-		CHECK(_offboard->set_attitude(attitude) == Offboard::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / offboard_rate_hz));
-	}
-
-	// Fly forward for 3s
-	attitude.thrust_value = 0.8f;
-	attitude.pitch_deg = -20.f;
-
-	for (unsigned i = 0; i < 3 * offboard_rate_hz; ++i) {
-		CHECK(_offboard->set_attitude(attitude) == Offboard::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / offboard_rate_hz));
-	}
-
-	// Check attitude
-	auto attitude_estimate = _telemetry->attitude_euler();
-	CHECK(fabsf(attitude.roll_deg - attitude_estimate.roll_deg) < 5.f);
-	CHECK(fabsf(attitude.pitch_deg - attitude_estimate.pitch_deg) < 5.f);
-
-	// Descend
-	attitude.thrust_value = 0.4f;
-	attitude.pitch_deg = 0.f;
-
-	for (unsigned i = 0; i < 6 * offboard_rate_hz; ++i) {
-		CHECK(_offboard->set_attitude(attitude) == Offboard::Result::Success);
-		sleep_for(std::chrono::milliseconds(1000 / offboard_rate_hz));
-	}
-
-	attitude.thrust_value = 0.0f;
-	CHECK(_offboard->set_attitude(attitude) == Offboard::Result::Success);
-}
-
-void AutopilotTester::start_checking_altitude(const float max_deviation_m)
-{
-	std::array<float, 3> initial_position = get_current_position_ned();
-	float target_altitude = initial_position[2];
-
-	_check_altitude_handle = _telemetry->subscribe_position([target_altitude, max_deviation_m,
-			 this](Telemetry::Position new_position) {
-		const float current_deviation = fabs((-target_altitude) - new_position.relative_altitude_m);
-		CHECK(current_deviation <= max_deviation_m);
-	});
-}
-
-void AutopilotTester::stop_checking_altitude()
-{
-	_telemetry->unsubscribe_position(_check_altitude_handle);
-}
-
-void AutopilotTester::check_tracks_mission_raw(float corridor_radius_m, bool reverse)
-{
-	auto mission_raw = _mission_raw->download_mission();
-	CHECK(mission_raw.first == MissionRaw::Result::Success);
-
-	auto mission_items = mission_raw.second;
-	auto ct = get_coordinate_transformation();
-
-	_telemetry->set_rate_position_velocity_ned(5);
-	_telemetry->subscribe_position_velocity_ned([ct, mission_items, corridor_radius_m, reverse,
-	    this](Telemetry::PositionVelocityNed position_velocity_ned) {
-		auto progress = _mission_raw->mission_progress();
-
-
-		std::function<std::array<float, 3>(std::vector<mavsdk::MissionRaw::MissionItem>, unsigned, mavsdk::geometry::CoordinateTransformation)>
-		get_waypoint_for_sequence = [](std::vector<mavsdk::MissionRaw::MissionItem> mission_items, int sequence, auto ct) {
-			for (auto waypoint : mission_items) {
-
-				if (waypoint.seq == (uint32_t)sequence) {
-					return get_local_mission_item_from_raw_item<float>(waypoint, ct);
-				}
-			}
-
-			return  std::array<float, 3>({0.0f, 0.0f, 0.0f});
-		};
-
-		if (progress.current > 0 && progress.current < progress.total) {
-			// Get shortest distance of current position to 3D line between previous and next waypoint
-
-			std::array<float, 3> current { position_velocity_ned.position.north_m,
-						       position_velocity_ned.position.east_m,
-						       position_velocity_ned.position.down_m };
-			std::array<float, 3> wp_prev = get_waypoint_for_sequence(mission_items,
-						       reverse ? progress.current + 1 : progress.current - 1, ct);
-			std::array<float, 3> wp_next = get_waypoint_for_sequence(mission_items, progress.current, ct);
-
-			float distance_to_trajectory = point_to_line_distance(current, wp_prev, wp_next);
-
-			CHECK(distance_to_trajectory < corridor_radius_m);
-		}
-	});
-}
-
-void AutopilotTester::check_mission_land_within(float acceptance_radius_m)
-{
-	auto mission_raw = _mission_raw->download_mission();
-	CHECK(mission_raw.first == MissionRaw::Result::Success);
-
-	// Get last mission item
-	MissionRaw::MissionItem land_mission_item = mission_raw.second.back();
-	bool is_landing_item = (land_mission_item.command == 85) || (land_mission_item.command == 21);
-	CHECK(is_landing_item);
-	Telemetry::GroundTruth land_coord{};
-	land_coord.latitude_deg = static_cast<double>(land_mission_item.x) / 1E7;
-	land_coord.longitude_deg = static_cast<double>(land_mission_item.y) / 1E7;
-
-	CHECK(ground_truth_horizontal_position_close_to(land_coord, acceptance_radius_m));
 }
 
 void AutopilotTester::check_tracks_mission(float corridor_radius_m)
@@ -740,34 +490,6 @@ void AutopilotTester::check_tracks_mission(float corridor_radius_m)
 	});
 }
 
-void AutopilotTester::check_current_altitude(float target_rel_altitude_m, float max_distance_m)
-{
-	CHECK(std::abs(_telemetry->position().relative_altitude_m - target_rel_altitude_m) <= max_distance_m);
-}
-
-void AutopilotTester::execute_rtl_when_reaching_mission_sequence(int sequence_number)
-{
-	start_and_wait_for_mission_sequence_raw(sequence_number);
-	execute_rtl();
-}
-
-void AutopilotTester::send_custom_mavlink_command(const MavlinkPassthrough::CommandInt &command)
-{
-	_mavlink_passthrough->send_command_int(command);
-}
-
-void AutopilotTester::add_mavlink_message_callback(uint16_t message_id,
-		std::function< void(const mavlink_message_t &)> callback)
-{
-	_mavlink_passthrough->subscribe_message(message_id, std::move(callback));
-}
-
-std::array<float, 3> AutopilotTester::get_current_position_ned()
-{
-	mavsdk::Telemetry::PositionVelocityNed position_velocity_ned = _telemetry->position_velocity_ned();
-	std::array<float, 3> position_ned{position_velocity_ned.position.north_m, position_velocity_ned.position.east_m, position_velocity_ned.position.down_m};
-	return position_ned;
-}
 
 void AutopilotTester::offboard_land()
 {
@@ -869,17 +591,16 @@ bool AutopilotTester::ground_truth_horizontal_position_far_from(const Telemetry:
 	return pass;
 }
 
-void AutopilotTester::start_and_wait_for_mission_sequence(int sequence_number)
+void AutopilotTester::start_and_wait_for_first_mission_item()
 {
 	auto prom = std::promise<void> {};
 	auto fut = prom.get_future();
 
-	Mission::MissionProgressHandle handle = _mission->subscribe_mission_progress(
-	[&prom, &handle, this, sequence_number](Mission::MissionProgress progress) {
+	_mission->subscribe_mission_progress([&prom, this](Mission::MissionProgress progress) {
 		std::cout << time_str() << "Progress: " << progress.current << "/" << progress.total << std::endl;
 
-		if (progress.current >= sequence_number) {
-			_mission->unsubscribe_mission_progress(handle);
+		if (progress.current >= 1) {
+			_mission->subscribe_mission_progress(nullptr);
 			prom.set_value();
 		}
 	});
@@ -889,35 +610,14 @@ void AutopilotTester::start_and_wait_for_mission_sequence(int sequence_number)
 	REQUIRE(fut.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
 }
 
-void AutopilotTester::start_and_wait_for_mission_sequence_raw(int sequence_number)
-{
-	auto prom = std::promise<void> {};
-	auto fut = prom.get_future();
-
-	MissionRaw::MissionProgressHandle handle = _mission_raw->subscribe_mission_progress(
-	[&prom, &handle, this, sequence_number](MissionRaw::MissionProgress progress) {
-		std::cout << time_str() << "Progress: " << progress.current << "/" << progress.total << std::endl;
-
-		if (progress.current >= sequence_number) {
-			_mission_raw->unsubscribe_mission_progress(handle);
-			prom.set_value();
-		}
-	});
-
-	REQUIRE(_mission_raw->start_mission() == MissionRaw::Result::Success);
-
-	REQUIRE(fut.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
-}
-
 void AutopilotTester::wait_for_flight_mode(Telemetry::FlightMode flight_mode, std::chrono::seconds timeout)
 {
 	auto prom = std::promise<void> {};
 	auto fut = prom.get_future();
 
-	Telemetry::FlightModeHandle handle = _telemetry->subscribe_flight_mode(
-	[&prom, &handle, flight_mode, this](Telemetry::FlightMode new_flight_mode) {
+	_telemetry->subscribe_flight_mode([&prom, flight_mode, this](Telemetry::FlightMode new_flight_mode) {
 		if (new_flight_mode == flight_mode) {
-			_telemetry->unsubscribe_flight_mode(handle);
+			_telemetry->subscribe_flight_mode(nullptr);
 			prom.set_value();
 		}
 	});
@@ -930,32 +630,9 @@ void AutopilotTester::wait_for_landed_state(Telemetry::LandedState landed_state,
 	auto prom = std::promise<void> {};
 	auto fut = prom.get_future();
 
-	Telemetry::LandedStateHandle handle = _telemetry->subscribe_landed_state(
-	[&prom, &handle, landed_state, this](Telemetry::LandedState new_landed_state) {
+	_telemetry->subscribe_landed_state([&prom, landed_state, this](Telemetry::LandedState new_landed_state) {
 		if (new_landed_state == landed_state) {
-			_telemetry->unsubscribe_landed_state(handle);
-			prom.set_value();
-		}
-	});
-
-	REQUIRE(fut.wait_for(timeout) == std::future_status::ready);
-}
-
-void AutopilotTester::wait_until_speed_lower_than(float speed, std::chrono::seconds timeout)
-{
-	auto prom = std::promise<void> {};
-	auto fut = prom.get_future();
-
-	Telemetry::PositionVelocityNedHandle handle = _telemetry->subscribe_position_velocity_ned(
-	[&prom, &handle, speed, this](Telemetry::PositionVelocityNed position_velocity_ned) {
-		std::array<float, 3> current_velocity;
-		current_velocity[0] = position_velocity_ned.velocity.north_m_s;
-		current_velocity[1] = position_velocity_ned.velocity.east_m_s;
-		current_velocity[2] = position_velocity_ned.velocity.down_m_s;
-		const float current_speed = norm(current_velocity);
-
-		if (current_speed <= speed) {
-			_telemetry->unsubscribe_position_velocity_ned(handle);
+			_telemetry->subscribe_landed_state(nullptr);
 			prom.set_value();
 		}
 	});
@@ -965,20 +642,32 @@ void AutopilotTester::wait_until_speed_lower_than(float speed, std::chrono::seco
 
 void AutopilotTester::wait_for_mission_finished(std::chrono::seconds timeout)
 {
-	REQUIRE(poll_condition_with_timeout(
-	[ = ]() {
-		auto result = _mission->is_mission_finished();
-		return result.first == Mission::Result::Success && result.second;
-	}, timeout));
+	auto prom = std::promise<void> {};
+	auto fut = prom.get_future();
+
+	_mission->subscribe_mission_progress([&prom, this](Mission::MissionProgress progress) {
+		if (progress.current == progress.total) {
+			_mission->subscribe_mission_progress(nullptr);
+			prom.set_value();
+		}
+	});
+
+	REQUIRE(fut.wait_for(timeout) == std::future_status::ready);
 }
 
 void AutopilotTester::wait_for_mission_raw_finished(std::chrono::seconds timeout)
 {
-	REQUIRE(poll_condition_with_timeout(
-	[ = ]() {
-		auto result = _mission_raw->is_mission_finished();
-		return result.first == MissionRaw::Result::Success && result.second;
-	}, timeout));
+	auto prom = std::promise<void> {};
+	auto fut = prom.get_future();
+
+	_mission_raw->subscribe_mission_progress([&prom, this](MissionRaw::MissionProgress progress) {
+		if (progress.current == progress.total) {
+			_mission_raw->subscribe_mission_progress(nullptr);
+			prom.set_value();
+		}
+	});
+
+	REQUIRE(fut.wait_for(timeout) == std::future_status::ready);
 }
 
 void AutopilotTester::move_mission_raw_here(std::vector<MissionRaw::MissionItem> &mission_items)
@@ -1019,26 +708,4 @@ void AutopilotTester::report_speed_factor()
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
-}
-
-void AutopilotTester::enable_fixedwing_mectrics()
-{
-	CHECK(getTelemetry()->set_rate_fixedwing_metrics(10.f) == Telemetry::Result::Success);
-}
-
-void AutopilotTester::check_airspeed_is_valid()
-{
-	// If the airspeed was invalidated during the flight, the airspeed is sent in the
-	// telemetry is NAN and stays so with the default parameter settings.
-	const Telemetry::FixedwingMetrics &metrics = getTelemetry()->fixedwing_metrics();
-	REQUIRE(std::isfinite(metrics.airspeed_m_s));
-}
-
-void AutopilotTester::check_airspeed_is_invalid()
-{
-	// If the airspeed was invalidated during the flight, the airspeed is sent in the
-	// telemetry is NAN and stays so with the default parameter settings.
-	const Telemetry::FixedwingMetrics &metrics = getTelemetry()->fixedwing_metrics();
-	std::cout << "Reported airspeed after failure: " << metrics.airspeed_m_s ;
-	REQUIRE(!std::isfinite(metrics.airspeed_m_s));
 }

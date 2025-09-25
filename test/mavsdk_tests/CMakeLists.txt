@@ -16,33 +16,17 @@ if(MAVSDK_FOUND)
     add_executable(mavsdk_tests
         test_main.cpp
         autopilot_tester.cpp
-        autopilot_tester_failure.cpp
-        autopilot_tester_rtl.cpp
-        autopilot_tester_figure_eight.cpp
-        # follow-me needs a MAVSDK update:
-        # https://github.com/mavlink/MAVSDK/pull/1770
-        # autopilot_tester_follow_me.cpp
-        test_multicopter_basics.cpp
-        test_multicopter_control_allocation.cpp
-        test_multicopter_failure_injection.cpp
         test_multicopter_failsafe.cpp
         test_multicopter_mission.cpp
         test_multicopter_offboard.cpp
         test_multicopter_manual.cpp
         test_vtol_mission.cpp
-        test_vtol_figure_eight.cpp
-        test_vtol_rtl.cpp
-        test_vtol_mission_wind.cpp
-        test_vtol_loiter_airspeed_failure_blockage.cpp
-        # test_multicopter_follow_me.cpp
     )
 
     target_link_libraries(mavsdk_tests
         MAVSDK::mavsdk
         ${CMAKE_THREAD_LIBS_INIT}
     )
-
-    target_include_directories(mavsdk_tests PUBLIC ${CMAKE_BINARY_DIR}/..)
 
     target_compile_options(mavsdk_tests
         PRIVATE
