@@ -15,7 +15,7 @@ tmux send-keys -t $SESSION:0.1 "cd ~/Downloads/gestelt_ws/PX4-Autopilot && make 
 
 # Host-side waits, then send commands into PX4 shell (pane 1)
 sleep 8
-tmux send-keys -t $SESSION:0.1 "imu_ai_bridge start -p 14561" C-m
+tmux send-keys -t $SESSION:0.1 "imu_ai_bridge start -p 14560" C-m
 
 # Optionally switch EKF2 to AI source after the stream should be alive.
 # Assumes EKF2_IMU_SRC exists in your build. Comment these if you prefer manual switch.
