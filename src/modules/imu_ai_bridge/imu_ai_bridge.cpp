@@ -64,7 +64,7 @@ ImuAIBridge::~ImuAIBridge()
 	if (_socket_fd >= 0) {
 		close(_socket_fd);
 	}
-}
+	}
 
 bool ImuAIBridge::init()
 {
@@ -95,11 +95,11 @@ bool ImuAIBridge::init()
 
 	PX4_INFO("IMU AI Bridge listening on UDP port %d", _param_imu_ai_port.get());
 
-	// Start the work queue
-	ScheduleOnInterval(1000); // Check for data every 1ms
+	// Start the work queue (1 kHz polling cadence)
+	ScheduleOnInterval(1_ms);
 
 	return true;
-}
+	}
 
 void ImuAIBridge::Run()
 {
@@ -117,7 +117,7 @@ void ImuAIBridge::Run()
 
 	// Read AI IMU data from UDP socket
 	receive_ai_imu_data();
-}
+	}
 
 void ImuAIBridge::receive_ai_imu_data()
 {
@@ -125,67 +125,75 @@ void ImuAIBridge::receive_ai_imu_data()
 		return;
 	}
 
-	vehicle_imu_ai_s ai_imu_msg{};
 	struct sockaddr_in sender_addr {};
-	socklen_t sender_len = sizeof(sender_addr);
 
-	ssize_t bytes_received = recvfrom(_socket_fd, &ai_imu_msg, sizeof(ai_imu_msg), 0,
-					  (struct sockaddr *)&sender_addr, &sender_len);
+	while (true) {
+		socklen_t sender_len = sizeof(sender_addr);
+		vehicle_imu_ai_s ai_imu_msg{};
+		ssize_t bytes_received = recvfrom(_socket_fd, &ai_imu_msg, sizeof(ai_imu_msg), 0,
+				      (struct sockaddr *)&sender_addr, &sender_len);
 
-	if (bytes_received == sizeof(ai_imu_msg)) {
-		// Set current timestamp
-		ai_imu_msg.timestamp = hrt_absolute_time();
+		if (bytes_received < 0) {
+			if ((errno != EWOULDBLOCK) && (errno != EAGAIN)) {
+				PX4_WARN("recvfrom failed: %s", strerror(errno));
+				}
 
-		// Validate data ranges (basic sanity checks)
+			break;
+			}
+
+		if (bytes_received != sizeof(ai_imu_msg)) {
+			PX4_WARN("Received %zd bytes, expected %zu bytes", bytes_received, sizeof(ai_imu_msg));
+			continue;
+			}
+
+		const hrt_abstime now = hrt_absolute_time();
+		ai_imu_msg.timestamp = now;
+
+		if ((ai_imu_msg.timestamp_sample == 0) || (ai_imu_msg.timestamp_sample > now)) {
+			ai_imu_msg.timestamp_sample = now;
+			}
+
 		bool data_valid = true;
 
-		// Check delta angles are reasonable (< 2π rad)
-		for (int i = 0; i < 3; i++) {
-			if (fabsf(ai_imu_msg.delta_angle[i]) > 2.0f * M_PI_F) {
-				data_valid = false;
-				break;
-			}
-		}
-
-		// Check delta velocities are reasonable (< 100 m/s)
-		if (data_valid) {
+		// Basic sanity checks
 			for (int i = 0; i < 3; i++) {
-				if (fabsf(ai_imu_msg.delta_velocity[i]) > 100.0f) {
+				data_valid &= PX4_ISFINITE(ai_imu_msg.delta_angle[i]);
+				data_valid &= PX4_ISFINITE(ai_imu_msg.delta_velocity[i]);
+
+				if (!data_valid) {
+			break;
+			}
+
+				if ((fabsf(ai_imu_msg.delta_angle[i]) > 2.f * M_PI_F)
+					|| (fabsf(ai_imu_msg.delta_velocity[i]) > 100.f)) {
 					data_valid = false;
-					break;
-				}
+			break;
 			}
-		}
-
-		// Check integration times are reasonable (1-10ms)
-		if (data_valid) {
-				if (ai_imu_msg.delta_angle_dt < 0.0005f || ai_imu_msg.delta_angle_dt > 0.02f ||
-					ai_imu_msg.delta_velocity_dt < 0.0005f || ai_imu_msg.delta_velocity_dt > 0.02f) {
-						data_valid = false;
-				}
-		}
-
-		if (data_valid) {
-			// Publish the AI IMU data
-			_vehicle_imu_ai_pub.publish(ai_imu_msg);
-
-			_msg_count++;
-
-			// Log every 200 messages (about once per second at 200Hz)
-			if (_msg_count % 200 == 0) {
-				PX4_DEBUG("AI IMU: count=%u, dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
-						  _msg_count, (double)(ai_imu_msg.delta_velocity_dt * 1e3f),
-						  (double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],
-						  (double)ai_imu_msg.delta_angle[0], (double)ai_imu_msg.delta_angle[1], (double)ai_imu_msg.delta_angle[2]);
 			}
-		} else {
-			PX4_WARN("Invalid AI IMU data received, ignoring");
-		}
 
-	} else if (bytes_received > 0) {
-		PX4_WARN("Received %zd bytes, expected %zu bytes", bytes_received, sizeof(ai_imu_msg));
-	}
-	// bytes_received == -1 is normal for non-blocking socket when no data available
+			if (data_valid) {
+				data_valid &= PX4_ISFINITE(ai_imu_msg.delta_angle_dt)
+					&& PX4_ISFINITE(ai_imu_msg.delta_velocity_dt)
+					&& (ai_imu_msg.delta_angle_dt > 5e-4f) && (ai_imu_msg.delta_angle_dt < 5e-2f)
+					&& (ai_imu_msg.delta_velocity_dt > 5e-4f) && (ai_imu_msg.delta_velocity_dt < 5e-2f);
+}
+
+				if (!data_valid) {
+				PX4_WARN("Invalid AI IMU data received, ignoring");
+			continue;
+			}
+
+		_vehicle_imu_ai_pub.publish(ai_imu_msg);
+		_msg_count++;
+
+		if ((_msg_count % 200) == 0) {
+			PX4_DEBUG("AI IMU: count=%u, dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
+				_msg_count,
+				(double)(ai_imu_msg.delta_velocity_dt * 1e3f),
+				(double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],
+				(double)ai_imu_msg.delta_angle[0], (double)ai_imu_msg.delta_angle[1], (double)ai_imu_msg.delta_angle[2]);
+}
+}
 }
 
 int ImuAIBridge::task_spawn(int argc, char *argv[])
@@ -209,7 +217,7 @@ int ImuAIBridge::task_spawn(int argc, char *argv[])
 	_task_id = -1;
 
 	return PX4_ERROR;
-}
+	}
 
 int ImuAIBridge::print_status()
 {
@@ -218,12 +226,12 @@ int ImuAIBridge::print_status()
 	PX4_INFO("Messages received: %u", _msg_count);
 
 	return 0;
-}
+	}
 
 int ImuAIBridge::custom_command(int argc, char *argv[])
 {
 	return print_usage("unknown command");
-}
+	}
 
 int ImuAIBridge::print_usage(const char *reason)
 {
@@ -244,9 +252,9 @@ The AI model should send binary packets matching the vehicle_imu_ai message stru
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
-}
+	}
 
 extern "C" __EXPORT int imu_ai_bridge_main(int argc, char *argv[])
 {
 	return ImuAIBridge::main(argc, argv);
-}
+	}
