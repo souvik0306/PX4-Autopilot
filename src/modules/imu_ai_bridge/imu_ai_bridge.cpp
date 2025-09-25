@@ -134,12 +134,16 @@ void ImuAIBridge::receive_ai_imu_data()
 				      (struct sockaddr *)&sender_addr, &sender_len);
 
 		if (bytes_received < 0) {
+#if EWOULDBLOCK != EAGAIN
 			if ((errno != EWOULDBLOCK) && (errno != EAGAIN)) {
+#else
+			if (errno != EWOULDBLOCK) {
+#endif
 				PX4_WARN("recvfrom failed: %s", strerror(errno));
-				}
+			}
 
 			break;
-			}
+		}
 
 		if (bytes_received != sizeof(ai_imu_msg)) {
 			PX4_WARN("Received %zd bytes, expected %zu bytes", bytes_received, sizeof(ai_imu_msg));
