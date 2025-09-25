@@ -55,16 +55,6 @@ endif()
 # build NuttX
 add_subdirectory(NuttX ${PX4_BINARY_DIR}/NuttX)
 
-# check that CONFIG_ARCH_BOARD_CUSTOM_DIR is in PX4_BOARD_DIR
-if(CONFIG_ARCH_BOARD_CUSTOM_DIR_RELPATH)
-	get_filename_component(nuttx_defconfig_root "${NUTTX_DEFCONFIG}/../.." ABSOLUTE)
-	get_filename_component(nuttx_config_from_defconfig "${NUTTX_DIR}/${CONFIG_ARCH_BOARD_CUSTOM_DIR}" ABSOLUTE)
-
-	if(NOT ${nuttx_defconfig_root} MATCHES ${nuttx_config_from_defconfig})
-		message(FATAL_ERROR "NuttX custom board directory (${CONFIG_ARCH_BOARD_CUSTOM_DIR}) isn't in board directory (${PX4_BOARD_DIR})")
-	endif()
-endif()
-
 set(nuttx_libs)
 set(SCRIPT_PREFIX)
 if("${PX4_BOARD_LABEL}" STREQUAL "bootloader")
@@ -175,6 +165,7 @@ if (NOT CONFIG_BUILD_FLAT)
 		-Wl,--start-group
 			${nuttx_libs}
 			${kernel_module_libraries}
+			px4_work_queue # TODO, this shouldn't be needed here?
 		-Wl,--end-group
 
 		m
@@ -242,105 +233,6 @@ if (NOT CONFIG_BUILD_FLAT)
 
 else()
 
-if(CONFIG_ARCH_CHIP_ESP32)
-
-	set(PX4_STARTUP_DIR ${PX4_SOURCE_DIR}/platforms/nuttx/NuttX/nuttx/arch/xtensa/src)
-	set(WIRELESS_LIB ${PX4_STARTUP_DIR}/esp32/esp-wireless-drivers-3rdparty/libs/esp32/)
-
-	set(NUTTX_STARTUP_OBJS
-	${PX4_STARTUP_DIR}/xtensa_vectors.o
-	${PX4_STARTUP_DIR}/xtensa_window_vector.o
-	${PX4_STARTUP_DIR}/xtensa_windowspill.o
-	${PX4_STARTUP_DIR}/xtensa_int_handlers.o
-	${PX4_STARTUP_DIR}/xtensa_user_handler.o
-	${PX4_STARTUP_DIR}/xtensa_initialize.o
-	${PX4_STARTUP_DIR}/xtensa_initialstate.o
-	${PX4_STARTUP_DIR}/esp32_start.o
-	${PX4_STARTUP_DIR}/esp32_wdt.o
-	)
-
-	set(NUTTX_NETWORK_LIB
-	libbtdm_app.a
-	libcoexist.a
-	libcore.a
-	libespnow.a
-	libnet80211.a
-	libphy.a
-	libpp.a
-	librtc.a
-	libsmartconfig.a
-	libwapi.a
-	libwpa_supplicant.a
-	)
-	execute_process(COMMAND touch ${NUTTX_STARTUP_OBJS}
-	WORKING_DIRECTORY ${PX4_SOURCE_DIR})
-	set_source_files_properties(
-		${NUTTX_STARTUP_OBJS}
-		PROPERTIES
-		EXTERNAL_OBJECT true
-		GENERATED true)
-
-	target_link_libraries(nuttx_c INTERFACE nuttx_sched) # nxsched_get_streams
-
-	target_link_libraries(nuttx_arch
-			INTERFACE
-			drivers_board
-			arch_hrt
-			arch_board_reset
-			-L${WIRELESS_LIB}
-			-Wl,--start-group
-			${NUTTX_NETWORK_LIB}
-			-Wl,--end-group
-	)
-
-	target_link_libraries(nuttx_c INTERFACE nuttx_drivers)
-	target_link_libraries(nuttx_drivers INTERFACE nuttx_c nuttx_fs)
-	target_link_libraries(nuttx_xx INTERFACE nuttx_c)
-	target_link_libraries(nuttx_fs INTERFACE nuttx_c nuttx_net)
-	target_link_libraries(nuttx_net INTERFACE nuttx_mm)
-	target_link_libraries(px4 PRIVATE
-		-nostartfiles
-		-nodefaultlibs
-		-nostdlib
-		-nostdinc++
-		-mlongcalls
-		-fno-exceptions
-		-fno-rtti
-		-Wl,--cref
-		-L${WIRELESS_LIB}
-
-		-Wl,-T${NUTTX_CONFIG_DIR_CYG}/scripts/${SCRIPT_PREFIX}esp32_out.ld
-		-T${NUTTX_CONFIG_DIR_CYG}/scripts/${SCRIPT_PREFIX}esp32.ld
-		-T${NUTTX_CONFIG_DIR_CYG}/scripts/${SCRIPT_PREFIX}esp32_rom.ld
-		-Wl,-Map=${PX4_CONFIG}.map
-		-Wl,--gc-sections
-
-		-Wl,--start-group
-			${nuttx_libs}
-			${NUTTX_STARTUP_OBJS}
-			${NUTTX_NETWORK_LIB}
-		-Wl,--end-group
-
-		m
-		gcc
-		)
-
-		if(NOT USE_LD_GOLD)
-			target_link_libraries(px4 PRIVATE -Wl,--print-memory-usage)
-		endif()
-
-		target_link_libraries(px4 PRIVATE ${module_libraries})
-		if(config_romfs_root)
-			add_subdirectory(${PX4_SOURCE_DIR}/ROMFS ${PX4_BINARY_DIR}/ROMFS)
-			target_link_libraries(px4 PRIVATE romfs)
-		endif()
-		add_custom_command(OUTPUT ${PX4_BINARY_OUTPUT}
-			COMMAND esptool --chip esp32 elf2image -o ${PX4_BINARY_OUTPUT} ${PX4_BINARY_DIR_REL}/${FW_NAME}
-			COMMAND du ${PX4_BINARY_OUTPUT} -h
-			DEPENDS px4
-		)
-else()
-
 	target_link_libraries(nuttx_c INTERFACE nuttx_sched) # nxsched_get_streams
 
 	target_link_libraries(nuttx_arch
@@ -365,7 +257,6 @@ else()
 		-fno-exceptions
 		-fno-rtti
 		-Wl,--script=${NUTTX_CONFIG_DIR_CYG}/scripts/${SCRIPT_PREFIX}script.ld
-		-L${NUTTX_CONFIG_DIR_CYG}/scripts
 		-Wl,-Map=${PX4_CONFIG}.map
 		-Wl,--warn-common
 		-Wl,--gc-sections
@@ -393,30 +284,6 @@ else()
 		COMMAND ${CMAKE_OBJCOPY} -O binary ${PX4_BINARY_DIR_REL}/${FW_NAME} ${PX4_BINARY_OUTPUT}
 		DEPENDS px4
 	)
-endif()
-
-endif()
-
-# create .hex if configured in NuttX
-if (CONFIG_INTELHEX_BINARY)
-
-	string(REPLACE ".elf" ".hex" hex_package ${PX4_BINARY_DIR}/${FW_NAME})
-
-	add_custom_command(
-		OUTPUT ${hex_package}
-		COMMAND
-			${CMAKE_OBJCOPY} -O ihex
-			${PX4_BINARY_DIR}/${PX4_CONFIG}.elf
-			${hex_package}
-		DEPENDS
-			${PX4_BINARY_DIR}/${PX4_CONFIG}.bin
-			airframes_xml
-			parameters_xml
-		COMMENT "Creating ${hex_package}"
-		WORKING_DIRECTORY ${PX4_BINARY_DIR}
-		)
-
-	add_custom_target(px4_hex ALL DEPENDS ${hex_package})
 
 endif()
 
@@ -450,21 +317,6 @@ if (TARGET parameters_xml AND TARGET airframes_xml)
 		include(upload)
 	endif()
 
-endif()
-
-if(${CONFIG_NSH_LIBRARY} MATCHES "y")
-	if(${CONFIG_NSH_DISABLE_ECHO} MATCHES "y")
-		message(FATAL_ERROR "init scripts require NSH SET (board has CONFIG_NSH_DISABLE_ECHO=y)")
-	endif()
-	if(${CONFIG_NSH_DISABLE_SET} MATCHES "y")
-		message(FATAL_ERROR "init scripts require NSH SET (board has CONFIG_NSH_DISABLE_SET=y)")
-	endif()
-	if(${CONFIG_NSH_DISABLE_SLEEP} MATCHES "y")
-		message(FATAL_ERROR "init scripts require NSH SET (board has CONFIG_NSH_DISABLE_SLEEP=y)")
-	endif()
-	if(${CONFIG_NSH_DISABLE_SOURCE} MATCHES "y")
-		message(FATAL_ERROR "init scripts require NSH SET (board has CONFIG_NSH_DISABLE_SOURCE=y)")
-	endif()
 endif()
 
 if("${PX4_BOARD_LABEL}" STREQUAL "bootloader")
@@ -506,16 +358,10 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Debug/gdbinit.in ${PX4_BINARY_DIR}/.g
 if(NOT NUTTX_DIR MATCHES "external")
 	if(CONFIG_ARCH_CHIP_MIMXRT1062DVL6A)
 		set(DEBUG_DEVICE "MIMXRT1062XXX6A")
-		set(DEBUG_SVD_FILE "MIMXRT1062.xml")
-	elseif(CONFIG_ARCH_CHIP_MIMXRT1176DVMAA)
-		set(DEBUG_DEVICE "MIMXRT1176DVMAA")
-		set(DEBUG_SVD_FILE "MIMXRT1176_cm7.xml")
+		set(DEBUG_SVD_FILE "MIMXRT1052.svd")
 	elseif(CONFIG_ARCH_CHIP_MK66FN2M0VMD18)
 		set(DEBUG_DEVICE "MK66FN2M0xxx18")
 		set(DEBUG_SVD_FILE "MK66F18.svd")
-	elseif(CONFIG_ARCH_CHIP_S32K344)
-		set(DEBUG_DEVICE "S32K344")
-		set(DEBUG_SVD_FILE "S32K344_M7.svd")
 	elseif(CONFIG_ARCH_CHIP_STM32F100C8)
 		set(DEBUG_DEVICE "STM32F100C8")
 		set(DEBUG_SVD_FILE "STM32F100xx.svd")
@@ -558,9 +404,6 @@ if(NOT NUTTX_DIR MATCHES "external")
 	elseif(CONFIG_ARCH_CHIP_STM32F777NI)
 		set(DEBUG_DEVICE "STM32F777NI")
 		set(DEBUG_SVD_FILE "STM32F7x7.svd")
-	elseif(CONFIG_ARCH_CHIP_STM32H743VI)
-		set(DEBUG_DEVICE "STM32H743VI")
-		set(DEBUG_SVD_FILE "STM32H7x3.svd")
 	elseif(CONFIG_ARCH_CHIP_STM32H743II)
 		set(DEBUG_DEVICE "STM32H743II")
 		set(DEBUG_SVD_FILE "STM32H7x3.svd")
@@ -581,34 +424,9 @@ if(NOT NUTTX_DIR MATCHES "external")
 	file(GLOB_RECURSE DEBUG_SVD_FILE_PATH
 		LIST_DIRECTORIES false
 		${CMAKE_SOURCE_DIR}/../cmsis-svd/data/*/${DEBUG_SVD_FILE}
-		${CMAKE_SOURCE_DIR}/../svd/${DEBUG_SVD_FILE}
 	)
-
-	if(CONFIG_DEBUG_TCBINFO)
-		# jlink-nuttx.so
-		add_custom_command(
-			OUTPUT ${NUTTX_DIR}/tools/jlink-nuttx.so
-			COMMAND make --no-print-directory --silent -f Makefile.host jlink-nuttx
-			DEPENDS ${NUTTX_DIR}/tools/jlink-nuttx.c
-			WORKING_DIRECTORY ${NUTTX_DIR}/tools
-		)
-		add_custom_target(jlink-nuttx ALL
-			DEPENDS ${NUTTX_DIR}/tools/jlink-nuttx.so
-		)
-
-		# JLINK_RTOS_PATH used by launch.json.in
-		set(JLINK_RTOS_PATH ${NUTTX_DIR}/tools/jlink-nuttx.so)
-	else()
-		set(JLINK_RTOS_PATH "")
-	endif()
-
 	if(DEBUG_SVD_FILE_PATH)
 		message(STATUS "Found SVD: ${DEBUG_SVD_FILE_PATH}")
-	endif()
-
-	if(NOT CMAKE_GDB)
-		find_program(CMAKE_GDB gdb-multiarch)
-		message(STATUS "Found GDB: ${CMAKE_GDB}")
 	endif()
 
 	if(DEBUG_DEVICE)

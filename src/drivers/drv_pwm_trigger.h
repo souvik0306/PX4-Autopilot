@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file drv_pwm_trigger.h
+ * @file PWM trigger output interface.
  *
  */
 

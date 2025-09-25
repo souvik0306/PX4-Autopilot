@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
-* @file led_pwm.cpp
+* @file drv_led_pwm.cpp
 *
 *
 */
@@ -61,7 +61,6 @@
 #include <chip.h>
 #include "hardware/imxrt_tmr.h"
 
-#ifndef BOARD_HAS_CUSTOM_LED_PWM
 int led_pwm_servo_set(unsigned channel, uint8_t  cvalue)
 {
 	return 0;
@@ -69,8 +68,8 @@ int led_pwm_servo_set(unsigned channel, uint8_t  cvalue)
 int led_pwm_servo_init(void)
 {
 	return 0;
+
 }
-#endif
 
 #if 0 && defined(BOARD_HAS_LED_PWM) || defined(BOARD_HAS_UI_LED_PWM)
 
@@ -288,15 +287,15 @@ led_pwm_servo_set(unsigned channel, uint8_t  cvalue)
 
 	return 0;
 }
-
-unsigned led_pwm_servo_get(unsigned channel)
+unsigned
+led_pwm_servo_get(unsigned channel)
 {
 	if (channel >= 3) {
 		return 0;
 	}
 
 	unsigned timer = led_pwm_channels[channel].timer_index;
-	uint16_t value = 0;
+	servo_position_t value = 0;
 
 	/* test timer for validity */
 	if ((led_pwm_timers[timer].base == 0) ||
@@ -308,8 +307,8 @@ unsigned led_pwm_servo_get(unsigned channel)
 	unsigned period = led_pwm_timer_get_period(timer);
 	return ((value + 1) * 255 / period);
 }
-
-int led_pwm_servo_init()
+int
+led_pwm_servo_init(void)
 {
 	/* do basic timer initialisation first */
 	for (unsigned i = 0; i < arraySize(led_pwm_timers); i++) {

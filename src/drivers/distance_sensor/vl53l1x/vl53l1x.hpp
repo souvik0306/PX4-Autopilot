@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file vl53l1x.hpp
+ * @file VL53L1X.hpp
  *
  * Driver for the ST VL53L1X ToF Sensor connected via I2C.
  */

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2016-2022 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2016, 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -133,8 +133,6 @@
  *
  * Note that these are unshifted addresses.
  */
-#define BOARD_MTD_NUM_EEPROM        2 /* MTD: base_eeprom, imu_eeprom*/
-
 #define PX4_I2C_OBDEV_SE050         0x48
 
 #define GPIO_I2C2_DRDY1_BMP388      /* PG5  */  (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTG|GPIO_PIN5)
@@ -208,24 +206,23 @@
 #define BOARD_ADC_OPEN_CIRCUIT_V     (5.6f)
 
 /* HW Version and Revision drive signals Default to 1 to detect */
-#define BOARD_HAS_HW_SPLIT_VERSIONING
+#define BOARD_HAS_HW_VERSIONING
 
 #define GPIO_HW_VER_REV_DRIVE  /* PG0 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTG|GPIO_PIN0)
 #define GPIO_HW_REV_SENSE      /* PH4 */  GPIO_ADC3_INP15
 #define GPIO_HW_VER_SENSE      /* PH3 */  GPIO_ADC3_INP14
-#define HW_INFO_INIT_PREFIX    "V6X"
+#define HW_INFO_INIT           {'V','6','X','x', 'x',0}
+#define HW_INFO_INIT_VER       3 /* Offset in above string of the VER */
+#define HW_INFO_INIT_REV       4 /* Offset in above string of the REV */
 
-#define BOARD_NUM_SPI_CFG_HW_VERSIONS 7
+#define BOARD_NUM_SPI_CFG_HW_VERSIONS 2 // Rev 0 and Rev 3 Sensor sets
 //                 Base/FMUM
-#define V6X_0     HW_FMUM_ID(0x0)   // FMUV6X, Auterion,HB  Sensor Set Rev 0
-#define V6X_1     HW_FMUM_ID(0x1)   // FMUV6X, CUAV Sensor Set Rev 1
-#define V6X_3     HW_FMUM_ID(0x3)   // FMUV6X, HB              Sensor Set Rev 3
-#define V6X_4     HW_FMUM_ID(0x4)   // FMUV6X, HB              Sensor Set Rev 4
-#define V6X_6     HW_FMUM_ID(0x6)   // FMUV6X, HB              Sensor Set Rev 6
-#define V6X_8     HW_FMUM_ID(0x8)   // FMUV6X, HB              Sensor Set Rev 8
-#define V6X_16    HW_FMUM_ID(0x10)  // FMUV6X, Auterion        Sensor Set Rev 16 from EEPROM
+#define V6X00   HW_VER_REV(0x0,0x0) // FMUV6X,                 Rev 0
+#define V6X01   HW_VER_REV(0x0,0x1) // FMUV6X,     BMI388 I2C2 Rev 1
+#define V6X03   HW_VER_REV(0x0,0x3) // FMUV6X,     Sensor Set  Rev 3
+#define V6X10   HW_VER_REV(0x1,0x0) // NO PX4IO,               Rev 0
+#define V6X13   HW_VER_REV(0x1,0x3) // NO PX4IO,   Sensor Set  Rev 3
 
-#define UAVCAN_NUM_IFACES_RUNTIME  1
 
 /* HEATER
  * PWM in future
@@ -269,11 +266,6 @@
 #define GPIO_VDD_3V3_SENSORS4_EN        /* PG8  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTG|GPIO_PIN8)
 #define GPIO_VDD_3V3_SPEKTRUM_POWER_EN  /* PH2  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN2)
 #define GPIO_VDD_3V3_SD_CARD_EN         /* PC13 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN13)
-
-/* MCP23009 GPIO expander */
-#define BOARD_GPIO_VDD_5V_COMP_VALID           "/dev/gpio4"
-#define BOARD_GPIO_VDD_5V_CAN1_GPS1_VALID      "/dev/gpio5"
-
 
 /* Spare GPIO */
 
@@ -323,11 +315,10 @@
 #define HRT_PPM_CHANNEL         /* T8C1 */  1  /* use capture/compare channel 1 */
 #define GPIO_PPM_IN             /* PI5 T8C1 */ GPIO_TIM8_CH1IN_2
 
-/* Some RC protocols are bi-directional, therefore we need a half-duplex UART */
+/* RC Serial port */
+
+#define RC_SERIAL_PORT                     "/dev/ttyS5"
 #define RC_SERIAL_SINGLEWIRE
-/* The STM32 UART by default wires half-duplex mode to the TX pin, but our
- * signal in routed to the RX pin, so we need to swap the pins */
-#define RC_SERIAL_SWAP_RXTX
 
 /* Input Capture Channels. */
 #define INPUT_CAP1_TIMER                  1
@@ -377,11 +368,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_BOARDCTL=y, OR
+ *  CONFIG_LIB_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif

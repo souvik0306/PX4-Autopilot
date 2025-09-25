@@ -168,13 +168,15 @@
 
 /* HW Version and Revision drive signals Default to 1 to detect */
 
-#define BOARD_HAS_HW_VERSIONING // migrate to Split
+#define BOARD_HAS_HW_VERSIONING
 
 #define GPIO_HW_VER_REV_DRIVE  /* PG0 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTG|GPIO_PIN0)
 #define GPIO_HW_REV_SENSE      /* PF5 */  ADC3_GPIO(15)
 #define GPIO_HW_VER_SENSE      /* PF4 */  ADC3_GPIO(14)
-#define HW_INFO_INIT_PREFIX     "SDSA"
-#define SDSA0501                 HW_VER_REV(0x05,0x01)
+#define HW_INFO_INIT           {'V','5','X','x', 'x',0}
+#define HW_INFO_INIT_VER       3 /* Offset in above string of the VER */
+#define HW_INFO_INIT_REV       4 /* Offset in above string of the REV */
+
 /* HEATER
  * PWM in future
  */
@@ -196,7 +198,7 @@
  */
 #define DIRECT_PWM_OUTPUT_CHANNELS  8
 
-/* Define Battery Voltage Divider and A per V */
+/* Define Battery 1 g Divider and A per V. */
 #define BOARD_BATTERY_V_DIV         (13.653333333f)
 #define BOARD_BATTERY_A_PER_V       (36.367515152f)
 
@@ -300,11 +302,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_BOARDCTL=y, OR
+ *  CONFIG_LIB_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif

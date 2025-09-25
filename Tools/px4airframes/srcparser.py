@@ -2,37 +2,31 @@ import sys
 import re
 import os
 
-class AirframeGroup(object):
+class ParameterGroup(object):
     """
-    Airframe group
-
-    type: specific vehicle type (e.g. VTOL Tiltrotor, VTOL Quadrotor, etc.)
-    class: vehicle class (e.g. Multicopter, Fixed Wing, etc.)
+    Single parameter group
     """
-    def __init__(self, type, af_class):
-        self.type = type
+    def __init__(self, name, af_class):
+        self.name = name
         self.af_class = af_class
-        self.airframes = []
+        self.params = []
 
-    def AddAirframe(self, airframe):
-        """
-        Add airframe to the airframe group
-        """
-        self.airframes.append(airframe)
 
-    def GetType(self):
+    def AddParameter(self, param):
         """
-        Get airframe group's vehicle type
+        Add parameter to the group
+        """
+        self.params.append(param)
 
-        e.g. VTOL Tiltrotor, VTOL Quadrotor, etc.
+    def GetName(self):
         """
-        return self.type
+        Get parameter group name
+        """
+        return self.name
 
     def GetClass(self):
         """
-        Get airframe group's vehicle class
-
-        e.g. Multicopter, Fixed Wing, etc.
+        Get parameter group vehicle type.
         """
         return self.af_class
 
@@ -40,86 +34,86 @@ class AirframeGroup(object):
         """
         Get parameter group image base name (w/o extension)
         """
-        if (self.type == "Standard Plane"):
+        if (self.name == "Standard Plane"):
             return "Plane"
-        elif (self.type == "Flying Wing"):
+        elif (self.name == "Flying Wing"):
             return "FlyingWing"
-        elif (self.type == "Quadrotor x"):
+        elif (self.name == "Quadrotor x"):
             return "QuadRotorX"
-        elif (self.type == "Quadrotor +"):
+        elif (self.name == "Quadrotor +"):
             return "QuadRotorPlus"
-        elif (self.type == "Hexarotor x"):
+        elif (self.name == "Hexarotor x"):
             return "HexaRotorX"
-        elif (self.type == "Hexarotor +"):
+        elif (self.name == "Hexarotor +"):
             return "HexaRotorPlus"
-        elif (self.type == "Octorotor +"):
+        elif (self.name == "Octorotor +"):
             return "OctoRotorPlus"
-        elif (self.type == "Octorotor x"):
+        elif (self.name == "Octorotor x"):
             return "OctoRotorX"
-        elif (self.type == "Octorotor Coaxial"):
+        elif (self.name == "Octorotor Coaxial"):
             return "OctoRotorXCoaxial"
-        elif (self.type == "Octo Coax Wide"):
+        elif (self.name == "Octo Coax Wide"):
             return "OctoRotorXCoaxial"
-        elif (self.type == "Quadrotor Wide"):
+        elif (self.name == "Quadrotor Wide"):
             return "QuadRotorWide"
-        elif (self.type == "Quadrotor H"):
+        elif (self.name == "Quadrotor H"):
             return "QuadRotorH"
-        elif (self.type == "Dodecarotor cox"):
+        elif (self.name == "Dodecarotor cox"):
             return "DodecaRotorXCoaxial"
-        elif (self.type == "Simulation"):
+        elif (self.name == "Simulation"):
             return "AirframeSimulation"
-        elif (self.type == "Plane A-Tail"):
+        elif (self.name == "Plane A-Tail"):
             return "PlaneATail"
-        elif (self.type == "Plane V-Tail"):
+        elif (self.name == "Plane V-Tail"):
             return "PlaneVTail"
-        elif (self.type == "VTOL Duo Tailsitter"):
+        elif (self.name == "VTOL Duo Tailsitter"):
             return "VTOLDuoRotorTailSitter"
-        elif (self.type == "Standard VTOL"):
+        elif (self.name == "Standard VTOL"):
             return "VTOLPlane"
-        elif (self.type == "VTOL Quad Tailsitter"):
+        elif (self.name == "VTOL Quad Tailsitter"):
             return "VTOLQuadRotorTailSitter"
-        elif (self.type == "VTOL Tiltrotor"):
+        elif (self.name == "VTOL Tiltrotor"):
             return "VTOLTiltRotor"
-        elif (self.type == "VTOL Octoplane"):
+        elif (self.name == "VTOL Octoplane"):
             return "VTOLPlaneOcto"
-        elif (self.type == "Coaxial Helicopter"):
+        elif (self.name == "Coaxial Helicopter"):
             return "HelicopterCoaxial"
-        elif (self.type == "Helicopter"):
+        elif (self.name == "Helicopter"):
             return "Helicopter"
-        elif (self.type == "Hexarotor Coaxial"):
+        elif (self.name == "Hexarotor Coaxial"):
             return "Y6B"
-        elif (self.type == "Y6A"):
+        elif (self.name == "Y6A"):
             return "Y6A"
-        elif (self.type == "Tricopter Y-"):
+        elif (self.name == "Tricopter Y-"):
             return "YMinus"
-        elif (self.type == "Tricopter Y+"):
+        elif (self.name == "Tricopter Y+"):
             return "YPlus"
-        elif (self.type == "Autogyro"):
+        elif (self.name == "Autogyro"):
             return "Autogyro"
-        elif (self.type == "Airship"):
+        elif (self.name == "Airship"):
             return "Airship"
-        elif (self.type == "Rover"):
+        elif (self.name == "Rover"):
             return "Rover"
-        elif (self.type == "Boat"):
+        elif (self.name == "Boat"):
             return "Boat"
-        elif (self.type == "Balloon"):
+        elif (self.name == "Balloon"):
             return "Balloon"
-        elif (self.type == "Vectored 6 DOF UUV"):
+        elif (self.name == "Vectored 6 DOF UUV"):
             return "Vectored6DofUUV"
-        elif self.type == "Free-Flyer":
-            return "FreeFlyer"
         return "AirframeUnknown"
 
-    def GetAirframes(self):
+    def GetParams(self):
         """
-        Returns the parsed list of airframes objects. Note that returned
-        object is not a copy. Modifications affect state of the parser.
+        Returns the parsed list of parameters. Every parameter is a Parameter
+        object. Note that returned object is not a copy. Modifications affect
+        state of the parser.
         """
-        return sorted(self.airframes, key=lambda x: x.GetId())
 
-class Airframe(object):
+        return sorted(self.params, key=lambda x: x.GetId())
+
+class Parameter(object):
     """
-    Single Airframe definition
+    Single parameter
     """
 
     # Define sorting order of the fields
@@ -294,7 +288,7 @@ class SourceParser(object):
     }
 
     def __init__(self):
-        self.airframe_groups = {}
+        self.param_groups = {}
 
     def GetSupportedExtensions(self):
         """
@@ -353,10 +347,10 @@ class SourceParser(object):
                             tag, desc = m.group(1, 2)
                             if (tag == "output"):
                                 key, text = desc.split(' ', 1)
-                                outputs[key] = text
+                                outputs[key] = text;
                             elif (tag == "board"):
                                 key, text = desc.split(' ', 1)
-                                archs[key] = text
+                                archs[key] = text;
                             else:
                                 tags[tag] = desc
                             current_tag = tag
@@ -433,7 +427,7 @@ class SourceParser(object):
             post_path = None
 
         # We already know this is an airframe config, so add it
-        airframe = Airframe(path, post_path, airframe_name, airframe_type, airframe_class, airframe_id, maintainer)
+        param = Parameter(path, post_path, airframe_name, airframe_type, airframe_class, airframe_id, maintainer)
 
         # Done with file, store
         for tag in tags:
@@ -446,24 +440,24 @@ class SourceParser(object):
             if tag == "name":
                 airframe_name = tags[tag]
             else:
-                airframe.SetField(tag, tags[tag])
+                param.SetField(tag, tags[tag])
 
         # Store outputs
         for output in outputs:
-            airframe.SetOutput(output, outputs[output])
+            param.SetOutput(output, outputs[output])
 
         # Store outputs
         for arch in archs:
-            airframe.SetArch(arch, archs[arch])
+            param.SetArch(arch, archs[arch])
 
         # Store the parameter
 
         # Create a class-specific airframe group. This is needed to catch cases where an airframe type might cross classes (e.g. simulation)
-        class_group_identifier=airframe_type + airframe_class
-        if class_group_identifier not in self.airframe_groups:
-            #self.airframe_groups[airframe_type] = ParameterGroup(airframe_type)  #HW TEST REMOVE
-            self.airframe_groups[class_group_identifier] = AirframeGroup(airframe_type, airframe_class)
-        self.airframe_groups[class_group_identifier].AddAirframe(airframe)
+        class_group_identifier=airframe_type+airframe_class
+        if class_group_identifier not in self.param_groups:
+            #self.param_groups[airframe_type] = ParameterGroup(airframe_type)  #HW TEST REMOVE
+            self.param_groups[class_group_identifier] = ParameterGroup(airframe_type, airframe_class)
+        self.param_groups[class_group_identifier].AddParameter(param)
 
         return True
 
@@ -479,8 +473,8 @@ class SourceParser(object):
         Validates the airframe meta data.
         """
         seenParamNames = []
-        for group in self.GetAirframeGroups():
-            for param in group.GetAirframes():
+        for group in self.GetParamGroups():
+            for param in group.GetParams():
                 name  = param.GetName()
                 board = param.GetFieldValue("board")
                 # Check for duplicates
@@ -493,27 +487,27 @@ class SourceParser(object):
 
         return True
 
-    def GetAirframeGroups(self):
+    def GetParamGroups(self):
         """
-        Returns the parsed list of Airframe groups. Every Airframe is an Airframe
+        Returns the parsed list of parameters. Every parameter is a Parameter
         object. Note that returned object is not a copy. Modifications affect
         state of the parser.
         """
-        groups = self.airframe_groups.values()
-        groups = sorted(groups, key=lambda x: x.GetType())
+        groups = self.param_groups.values()
+        groups = sorted(groups, key=lambda x: x.GetName())
         groups = sorted(groups, key=lambda x: x.GetClass())
-        groups = sorted(groups, key=lambda x: self.priority.get(x.GetType(), 0), reverse=True)
+        groups = sorted(groups, key=lambda x: self.priority.get(x.GetName(), 0), reverse=True)
 
         #Rename duplicate groups to include the class (creating unique headings in page TOC)
         duplicate_test=set()
         duplicate_set=set()
         for group in groups:
-            if group.GetType() in duplicate_test:
-                duplicate_set.add(group.GetType())
+            if group.GetName() in duplicate_test:
+                duplicate_set.add(group.GetName())
             else:
-                duplicate_test.add(group.GetType() )
+                duplicate_test.add(group.GetName() )
         for group in groups:
-            if group.GetType() in duplicate_set:
-                group.name=group.GetType()+' (%s)' % group.GetClass()
+            if group.GetName() in duplicate_set:
+                group.name=group.GetName()+' (%s)' % group.GetClass()
 
         return groups

@@ -43,18 +43,20 @@ do
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param reset SYS_HITL'
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param status'
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param save'
-	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'bsondump /fs/mtd_params'
+	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param dump'
 
 	${DIR}/reboot.py --device ${SERIAL_DEVICE}
 
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param status'
-	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'bsondump /fs/mtd_params' || true
-	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'bsondump /fs/microsd/parameters_backup.bson' || true
+	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param dump /fs/mtd_params' || true
+	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'param dump /fs/microsd/parameters_backup.bson' || true
 
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'ps'
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'work_queue status'
 
-	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'mavlink status' || true
+	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'pwm info'
+
 	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'mavlink stop-all'
+	${DIR}/run_nsh_cmd.py --device ${SERIAL_DEVICE} --cmd 'gps stop'
 
 done

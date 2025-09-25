@@ -40,12 +40,18 @@
 
 #include <uORB/topics/uORBTopics.hpp> // For ORB_ID enum
 #include <stdint.h>
-#include <px4_platform_common/px4_config.h>
 
-#ifdef CONFIG_ORB_COMMUNICATOR
+#ifdef __PX4_NUTTX
 #include "ORBSet.hpp"
+#else
+#include <string>
+#include <set>
+#define ORBSet std::set<std::string>
+#endif
+
+#ifdef ORB_COMMUNICATOR
 #include "uORBCommunicator.hpp"
-#endif /* CONFIG_ORB_COMMUNICATOR */
+#endif /* ORB_COMMUNICATOR */
 
 namespace uORB
 {
@@ -160,9 +166,9 @@ typedef enum {
  * uORB Api's.
  */
 class uORB::Manager
-#ifdef CONFIG_ORB_COMMUNICATOR
+#ifdef ORB_COMMUNICATOR
 	: public uORBCommunicator::IChannelRxHandler
-#endif /* CONFIG_ORB_COMMUNICATOR */
+#endif /* ORB_COMMUNICATOR */
 {
 public:
 	// public interfaces for this class.
@@ -215,15 +221,17 @@ public:
 	 * @param data    A pointer to the initial data to be published.
 	 *      For topics updated by interrupt handlers, the advertisement
 	 *      must be performed from non-interrupt context.
+	 * @param queue_size  Maximum number of buffered elements. If this is 1, no queuing is
+	 *      used.
 	 * @return    nullptr on error, otherwise returns an object pointer
 	 *      that can be used to publish to the topic.
 	 *      If the topic in question is not known (due to an
 	 *      ORB_DEFINE with no corresponding ORB_DECLARE)
 	 *      this function will return nullptr and set errno to ENOENT.
 	 */
-	orb_advert_t orb_advertise(const struct orb_metadata *meta, const void *data = nullptr)
+	orb_advert_t orb_advertise(const struct orb_metadata *meta, const void *data, unsigned int queue_size = 1)
 	{
-		return orb_advertise_multi(meta, data, nullptr);
+		return orb_advertise_multi(meta, data, nullptr, queue_size);
 	}
 
 	/**
@@ -248,13 +256,16 @@ public:
 	 * @param instance  Pointer to an integer which will yield the instance ID (0-based)
 	 *      of the publication. This is an output parameter and will be set to the newly
 	 *      created instance, ie. 0 for the first advertiser, 1 for the next and so on.
+	 * @param queue_size  Maximum number of buffered elements. If this is 1, no queuing is
+	 *      used.
 	 * @return    nullptr on error, otherwise returns a handle
 	 *      that can be used to publish to the topic.
 	 *      If the topic in question is not known (due to an
 	 *      ORB_DEFINE with no corresponding ORB_DECLARE)
 	 *      this function will return nullptr and set errno to ENOENT.
 	 */
-	orb_advert_t orb_advertise_multi(const struct orb_metadata *meta, const void *data, int *instance);
+	orb_advert_t orb_advertise_multi(const struct orb_metadata *meta, const void *data, int *instance,
+					 unsigned int queue_size = 1);
 
 	/**
 	 * Unadvertise a topic.
@@ -398,7 +409,7 @@ public:
 	 * @param instance  ORB instance
 	 * @return    OK if the topic exists, PX4_ERROR otherwise.
 	 */
-	int  orb_exists(const struct orb_metadata *meta, int instance);
+	static int  orb_exists(const struct orb_metadata *meta, int instance);
 
 	/**
 	 * Set the minimum interval between which updates are seen for a subscription.
@@ -460,7 +471,7 @@ public:
 	static bool is_advertised(const void *node_handle);
 #endif
 
-#ifdef CONFIG_ORB_COMMUNICATOR
+#ifdef ORB_COMMUNICATOR
 	/**
 	 * Method to set the uORBCommunicator::IChannel instance.
 	 * @param comm_channel
@@ -476,7 +487,12 @@ public:
 	 */
 	uORBCommunicator::IChannel *get_uorb_communicator();
 
-#endif /* CONFIG_ORB_COMMUNICATOR */
+	/**
+	 * Utility method to check if there is a remote subscriber present
+	 * for a given topic
+	 */
+	bool is_remote_subscriber_present(const char *messageName);
+#endif /* ORB_COMMUNICATOR */
 
 private: // class methods
 
@@ -491,14 +507,13 @@ private: // class methods
 private: // data members
 	static Manager *_Instance;
 
-#ifdef CONFIG_ORB_COMMUNICATOR
+#ifdef ORB_COMMUNICATOR
 	// the communicator channel instance.
 	uORBCommunicator::IChannel *_comm_channel{nullptr};
-	static pthread_mutex_t _communicator_mutex;
 
-	// Track the advertisements we get from the remote side
+	ORBSet _remote_subscriber_topics;
 	ORBSet _remote_topics;
-#endif /* CONFIG_ORB_COMMUNICATOR */
+#endif /* ORB_COMMUNICATOR */
 
 	DeviceMaster *_device_master{nullptr};
 
@@ -506,30 +521,34 @@ private: //class methods
 	Manager();
 	virtual ~Manager();
 
-#ifdef CONFIG_ORB_COMMUNICATOR
+#ifdef ORB_COMMUNICATOR
 	/**
-	 * Interface to process a received topic advertisement from remote.
+	 * Interface to process a received topic from remote.
 	 * @param topic_name
 	 * 	This represents the uORB message Name (topic); This message Name should be
 	 * 	globally unique.
+	 * @param isAdvertisement
+	 * 	Represents if the topic has been advertised or is no longer avialable.
 	 * @return
 	 *  0 = success; This means the messages is successfully handled in the
 	 *  	handler.
 	 *  otherwise = failure.
 	 */
-	virtual int16_t process_remote_topic(const char *topic_name);
+	virtual int16_t process_remote_topic(const char *topic_name, bool isAdvertisement);
 
 	/**
 	   * Interface to process a received AddSubscription from remote.
 	   * @param messageName
 	   *  This represents the uORB message Name; This message Name should be
 	   *  globally unique.
+	   * @param msgRate
+	   *  The max rate at which the subscriber can accept the messages.
 	   * @return
 	   *  0 = success; This means the messages is successfully handled in the
 	   *    handler.
 	   *  otherwise = failure.
 	   */
-	virtual int16_t process_add_subscription(const char *messageName);
+	virtual int16_t process_add_subscription(const char *messageName, int32_t msgRateInHz);
 
 	/**
 	 * Interface to process a received control msg to remove subscription
@@ -558,7 +577,7 @@ private: //class methods
 	 *  otherwise = failure.
 	 */
 	virtual int16_t process_received_message(const char *messageName, int32_t length, uint8_t *data);
-#endif /* CONFIG_ORB_COMMUNICATOR */
+#endif /* ORB_COMMUNICATOR */
 
 #ifdef ORB_USE_PUBLISHER_RULES
 

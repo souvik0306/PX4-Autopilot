@@ -32,149 +32,140 @@
 ############################################################################
 
 px4_add_romfs_files(
-	# [0-999] Reserved (historical)
+	# [0-999] Reserved (historical)"
+
+	# [1000, 1999] Simulation setups"
+	1000_rc_fw_easystar.hil
+	1001_rc_quad_x.hil
+	1002_standard_vtol.hil
+	1100_rc_quad_x_sih.hil
+	1101_rc_plane_sih.hil
+	1102_tailsitter_duo_sih.hil
+
+	# [2000, 2999] Standard planes"
+	2100_standard_plane
+	2105_maja
+	2106_albatross
+	2200_mini_talon
+
+	2507_cloudship
+
+	# [3000, 3999] Flying wing"
+	3000_generic_wing
+	3030_io_camflyer
+	3031_phantom
+	3032_skywalker_x5
+	3033_wingwing
+	3034_fx79
+	3035_viper
+	3036_pigeon
+	3037_parrot_disco_mod
+	3100_tbs_caipirinha
+
+	# [4000, 4999] Quadrotor x"
+	4001_quad_x
+	4003_qavr5
+	4009_qav250
+	4010_dji_f330
+	4011_dji_f450
+	4014_s500
+	4015_holybro_s500
+	4016_holybro_px4vision
+	4017_nxp_hovergames
+	4019_x500_v2
+	4030_3dr_solo
+	4031_3dr_quad
+	4040_reaper
+	4041_beta75x
+	4050_generic_250
+	4051_s250aq
+	4052_holybro_qav250
+	4053_holybro_kopis2
+	4060_dji_matrice_100
+	4061_atl_mantis_edu
+	4071_ifo
+	4072_draco
+	4073_ifo-s
+	4080_zmr250
+	4090_nanomind
+	4100_tiltquadrotor
+	4500_clover4
+	4900_crazyflie
+	4901_crazyflie21
+
+	# [5000, 5999] Quadrotor +"
+	5001_quad_+
+
+	# [6000, 6999] Hexarotor x"
+	6001_hexa_x
+	6002_draco_r
+
+	# [7000, 7999] Hexarotor +"
+	7001_hexa_+
+
+	# [8000, 8999] Octorotor +"
+	8001_octo_x
+
+	# [9000, 9999] Octorotor +"
+	9001_octo_+
+
+	# [10000, 10999] Quadrotor Wide arm / H frame"
+	10015_tbs_discovery
+	10016_3dr_iris
+	10017_steadidrone_qu4d
+	10018_tbs_endurance
+
+	# [11000, 11999] Hexa Cox
+	11001_hexa_cox
+
+	# [12000, 12999] Octo Cox
+	12001_octo_cox
+	12002_steadidrone_mavrik
+
+	# [13000, 13999] VTOL
+	13000_generic_vtol_standard
+	13001_caipirinha_vtol
+	13002_firefly6
+	13003_quad_tailsitter
+	13004_quad+_tailsitter
+	13005_vtol_AAERT_quad
+	13006_vtol_standard_delta
+	13007_vtol_AAVVT_quad
+	13008_QuadRanger
+	13009_vtol_spt_ranger
+	13010_claire
+	13012_convergence
+	13013_deltaquad
+	13014_vtol_babyshark
+	13030_generic_vtol_quad_tiltrotor
+	13050_generic_vtol_octo
+	13200_generic_vtol_tailsitter
+
+	# [14000, 14999] Tri Y
+	14001_tri_y_yaw+
+	14002_tri_y_yaw-
+
+	15001_coax_heli
+
+	16001_helicopter
+
+	# [17000, 17999] Autogyro
+	17002_TF-AutoG2
+	17003_TF-G2
 
 	# [18000, 18999] High-altitude balloons
 	18001_TF-B1
 
 	# [22000, 22999] Reserve for custom models
+
+	24001_dodeca_cox
+
+	50000_generic_ground_vehicle
+	50003_aion_robotics_r1_rover
+	50004_nxpcup_car_dfrobot_gpx
+
+	# [60000, 61000] (Unmanned) Underwater Robots
+	60000_uuv_generic
+	60001_uuv_hippocampus
+	60002_uuv_bluerov2_heavy
 )
-
-if(CONFIG_MODULES_SIMULATION_PWM_OUT_SIM)
-	px4_add_romfs_files(
-		# [1000, 1999] Simulation setups
-		1001_rc_quad_x.hil
-		1002_standard_vtol.hil
-		1100_rc_quad_x_sih.hil
-		1101_rc_plane_sih.hil
-		1102_tailsitter_duo_sih.hil
-		1103_standard_vtol_sih.hil
-	)
-	if(CONFIG_MODULES_ROVER_ACKERMANN)
-		px4_add_romfs_files(
-			1104_standard_ackermann_sih.hil
-		)
-	endif()
-endif()
-
-if(CONFIG_MODULES_MC_RATE_CONTROL)
-	px4_add_romfs_files(
-		# [4000, 4999] Quadrotor x
-		4001_quad_x
-		4014_s500
-		4015_holybro_s500
-		4016_holybro_px4vision
-		4017_nxp_hovergames
-		4019_x500_v2
-		4020_holybro_px4vision_v1_5
-		4041_beta75x
-		4050_generic_250
-		4052_holybro_qav250
-		4053_holybro_kopis2
-		4061_atl_mantis_edu
-		4071_ifo
-		4073_ifo-s
-		4500_clover4
-		4601_droneblocks_dexi_5
-		4901_crazyflie21
-
-		# [5000, 5999] Quadrotor +
-		5001_quad_+
-
-		# [6000, 6999] Hexarotor x
-		6001_hexa_x
-		6002_draco_r
-
-		# [7000, 7999] Hexarotor +
-		7001_hexa_+
-
-		# [8000, 8999] Octorotor +
-		8001_octo_x
-
-		# [9000, 9999] Octorotor +
-		9001_octo_+
-
-		# [11000, 11999] Hexa Cox
-		11001_hexa_cox
-
-		# [12000, 12999] Octo Cox
-		12001_octo_cox
-
-		# [14000, 14999] MC with tilt
-		14001_generic_mc_with_tilt
-
-		16001_helicopter
-
-		24001_dodeca_cox
-	)
-endif()
-
-if(CONFIG_MODULES_FW_RATE_CONTROL)
-	px4_add_romfs_files(
-		# [2000, 2999] Standard planes
-		2100_standard_plane
-		2106_albatross
-
-		# [3000, 3999] Flying wing
-		3000_generic_wing
-
-		# [17000, 17999] Autogyro
-		17002_TF-AutoG2
-		17003_TF-G2
-	)
-endif()
-
-if(CONFIG_MODULES_AIRSHIP_ATT_CONTROL)
-	px4_add_romfs_files(
-		2507_cloudship
-	)
-endif()
-
-if(CONFIG_MODULES_VTOL_ATT_CONTROL)
-	px4_add_romfs_files(
-		# [13000, 13999] VTOL
-		13000_generic_vtol_standard
-		13100_generic_vtol_tiltrotor
-		13030_generic_vtol_quad_tiltrotor
-		13200_generic_vtol_tailsitter
-	)
-endif()
-
-if(CONFIG_MODULES_ROVER_DIFFERENTIAL)
-	px4_add_romfs_files(
-		# [50000, 50999] Differential rovers
-		50000_generic_rover_differential
-		50001_aion_robotics_r1_rover
-	)
-endif()
-
-if(CONFIG_MODULES_ROVER_ACKERMANN)
-	px4_add_romfs_files(
-		# [51000, 51999] Ackermann rovers
-		51000_generic_rover_ackermann
-		51001_axial_scx10_2_trail_honcho
-	)
-endif()
-
-if(CONFIG_MODULES_ROVER_MECANUM)
-	px4_add_romfs_files(
-		# [52000, 52999] Mecanum rovers
-		52000_generic_rover_mecanum
-	)
-endif()
-
-if(CONFIG_MODULES_UUV_ATT_CONTROL)
-	px4_add_romfs_files(
-		# [60000, 61000] (Unmanned) Underwater Robots
-		60000_uuv_generic
-		60001_uuv_hippocampus
-		60002_uuv_bluerov2_heavy
-	)
-endif()
-
-if(CONFIG_MODULES_SPACECRAFT)
-	px4_add_romfs_files(
-		# [70000, 70999] Spacecraft
-		70000_atmos
-	)
-endif()

@@ -40,7 +40,6 @@
 #include <containers/List.hpp>
 #include <lib/conversion/rotation.h>
 #include <px4_platform_common/atomic.h>
-#include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <px4_platform_common/sem.h>
 
@@ -229,7 +228,6 @@ public:
 	I2CSPIBusOption configuredBusOption() const { return _bus_option; }
 
 	int runningInstancesCount() const;
-	int runningInstancesOnBusCount() const;
 
 	bool next();
 

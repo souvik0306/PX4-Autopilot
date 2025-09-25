@@ -33,7 +33,7 @@
  ****************************************************************************/
 
 /**
- * @file pwr.cpp
+ * @file pwr.c
  *
  * Board-specific power button functions.
  */
@@ -55,7 +55,7 @@
 #include <uORB/uORB.h>
 #include <uORB/Publication.hpp>
 
-#include <arm_internal.h>
+#include <arm_arch.h>
 #include "board_config.h"
 #include <stm32_pwr.h>
 

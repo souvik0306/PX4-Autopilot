@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2014-2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2014-2019, 2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,7 +33,7 @@
 
 
 /**
- * @file LidarLitePWM.cpp
+ * @file LidarLitePWM.h
  * @author Johan Jansen <jnsn.johan@gmail.com>
  * @author Ban Siesta <bansiesta@gmail.com>
  *
@@ -109,7 +109,7 @@ LidarLitePWM::measure()
 		return PX4_ERROR;
 	}
 
-	const float current_distance = static_cast<float>(_pwm.pulse_width) * 1e-3f; // 1us = 1mm distance for LIDAR-Lite
+	const float current_distance = float(_pwm.pulse_width) * 1e-3f;   /* 10 usec = 1 cm distance for LIDAR-Lite */
 
 	/* Due to a bug in older versions of the LidarLite firmware, we have to reset sensor on (distance == 0) */
 	if (current_distance <= 0.0f) {

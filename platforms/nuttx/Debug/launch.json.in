@@ -3,10 +3,8 @@
     "configurations": [
         {
             "name": "jlink (@PX4_BOARD@)",
-            "gdbPath": "@CMAKE_GDB@",
             "device": "@DEBUG_DEVICE@",
             "svdFile": "@DEBUG_SVD_FILE_PATH@",
-            "rtos": "@JLINK_RTOS_PATH@",
             "executable": "${command:cmake.launchTargetPath}",
             "request": "launch",
             "type": "cortex-debug",
@@ -25,7 +23,6 @@
         },
         {
             "name": "stlink (@PX4_BOARD@)",
-            "gdbPath": "@CMAKE_GDB@",
             "device": "@DEBUG_DEVICE@",
             "svdFile": "@DEBUG_SVD_FILE_PATH@",
             "executable": "${command:cmake.launchTargetPath}",
@@ -44,7 +41,6 @@
         },
         {
             "name": "blackmagic (@PX4_BOARD@)",
-            "gdbPath": "@CMAKE_GDB@",
             "device": "@DEBUG_DEVICE@",
             "svdFile": "@DEBUG_SVD_FILE_PATH@",
             "executable": "${command:cmake.launchTargetPath}",

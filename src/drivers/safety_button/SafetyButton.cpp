@@ -31,7 +31,6 @@
  *
  ****************************************************************************/
 
-#include <board_config.h>
 #include "SafetyButton.hpp"
 
 #ifndef GPIO_BTN_SAFETY

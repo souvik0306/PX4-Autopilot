@@ -10,20 +10,23 @@ set VEHICLE_TYPE uuv
 # MAV_TYPE_SUBMARINE 12
 param set-default MAV_TYPE 12
 
-# Set micro-dds-client to use ethernet and IP-address 192.168.0.1
-param set-default UXRCE_DDS_AG_IP -1062731775
+param set-default PWM_MAIN_MAX 1950
+param set-default PWM_MAIN_MIN 1050
+param set-default PWM_MAIN_DISARM 1500
 
-# Disable preflight disarm to not interfere with external launching
-param set-default COM_DISARM_PRFLT -1
-param set-default CBRK_SUPPLY_CHK 894281
-param set-default COM_ARM_HFLT_CHK 0
+#
+# PWM Hz - 50 Hz is the normal rate in RC cars, boats etc,
+# higher rates may damage analog servos.
+#
+set PWM_MAIN_RATE 50
 
-#Missing params
-param set-default CP_DIST -1.0
+#
+# Enable servo output on pins 1-4
+set PWM_OUT 1234
 
-# Default to MoCap fusion
-param set-default ATT_EXT_HDG_M 2
-param set-default EKF2_EV_CTRL 15
-param set-default EKF2_EV_DELAY 5
-param set-default EKF2_GPS_CTRL 0
-param set-default EKF2_HGT_REF 3
+#
+# This is the gimbal pass mixer.
+#
+set MIXER_AUX pass
+set PWM_AUX_OUT 1234
+set PWM_AUX_RATE 50

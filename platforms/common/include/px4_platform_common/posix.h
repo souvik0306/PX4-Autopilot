@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file posix.h
+ * @file px4_posix.h
  *
  * Includes POSIX-like functions for virtual character devices
  */
@@ -44,7 +44,12 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+#if defined(__PX4_QURT)
+#include <dspal_types.h>
+#else
 #include <sys/types.h>
+#endif
 
 #include "sem.h"
 
@@ -100,19 +105,6 @@ typedef struct {
 #define POLLIN       (0x01)
 #endif
 
-#if defined(__PX4_QURT)
-// Qurt has no fsync implementation so need to declare one here
-// and then define a fake one in the Qurt platform code.
-void fsync(int fd);
-// Qurt doesn't have a way to set the scheduler policy. It is always, essentially,
-// SCHED_FIFO. So have to add a fake function for the code that tries to set it.
-#include <pthread.h>
-__EXPORT int pthread_attr_setschedpolicy(pthread_attr_t *attr, int policy);
-// Qurt POSIX implementation doesn't define the SIGCONT signal so we just map it
-// to a reasonable alternative
-#define SIGCONT SIGALRM
-#endif
-
 __EXPORT int 		px4_open(const char *path, int flags, ...);
 __EXPORT int 		px4_close(int fd);
 __EXPORT ssize_t	px4_read(int fd, void *buffer, size_t buflen);
@@ -126,6 +118,7 @@ __END_DECLS
 #else
 #error "No TARGET OS Provided"
 #endif
+
 
 // The stack size is intended for 32-bit architectures; therefore
 // we often run out of stack space when pointers are larger than 4 bytes.

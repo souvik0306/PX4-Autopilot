@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (C) 2024 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2012, 2017 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -58,9 +58,6 @@ __BEGIN_DECLS
 #define MAX_LED_TIMERS			2
 #define MAX_TIMER_LED_CHANNELS	6
 
-#define MAX_SPIX_SYNC_TIMERS		2
-#define MAX_TIMER_SPIX_SYNC_CHANNELS	2
-
 #define IO_TIMER_ALL_MODES_CHANNELS 0
 
 /* TIM_DMA_Base_address TIM DMA Base Address */
@@ -79,10 +76,7 @@ typedef enum io_timer_channel_mode_t {
 	IOTimerChanMode_Dshot   = 6,
 	IOTimerChanMode_LED     = 7,
 	IOTimerChanMode_PPS     = 8,
-	IOTimerChanMode_RPM     = 9,
-	IOTimerChanMode_Other   = 10,
-	IOTimerChanMode_DshotInverted = 11,
-	IOTimerChanMode_CaptureDMA = 12,
+	IOTimerChanMode_Other   = 9,
 	IOTimerChanModeSize
 } io_timer_channel_mode_t;
 
@@ -140,10 +134,6 @@ __EXPORT extern const timer_io_channels_t timer_io_channels[MAX_TIMER_IO_CHANNEL
 __EXPORT extern const io_timers_t led_pwm_timers[MAX_LED_TIMERS];
 __EXPORT extern const timer_io_channels_t led_pwm_channels[MAX_TIMER_LED_CHANNELS];
 
-__EXPORT extern const io_timers_t spix_sync_timers[MAX_SPIX_SYNC_TIMERS];
-__EXPORT extern const io_timers_channel_mapping_t spix_sync_channel_mapping;
-__EXPORT extern const timer_io_channels_t spix_sync_channels[MAX_TIMER_SPIX_SYNC_CHANNELS];
-
 __EXPORT int io_timer_channel_init(unsigned channel, io_timer_channel_mode_t mode,
 				   channel_handler_t channel_handler, void *context);
 
@@ -161,12 +151,7 @@ __EXPORT int io_timer_unallocate_channel(unsigned channel);
 __EXPORT int io_timer_get_channel_mode(unsigned channel);
 __EXPORT int io_timer_get_mode_channels(io_timer_channel_mode_t mode);
 __EXPORT extern void io_timer_trigger(unsigned channels_mask);
-
 __EXPORT void io_timer_update_dma_req(uint8_t timer, bool enable);
-__EXPORT int io_timer_set_dshot_burst_mode(uint8_t timer, unsigned dshot_pwm_rate, uint8_t dma_burst_length);
-
-__EXPORT void io_timer_capture_dma_req(uint8_t timer, uint8_t timer_channel_index, bool enable);
-__EXPORT int io_timer_set_dshot_capture_mode(uint8_t timer, uint8_t timer_channel_index, unsigned dshot_pwm_freq);
 
 /**
  * Reserve a timer
@@ -176,6 +161,7 @@ __EXPORT int io_timer_allocate_timer(unsigned timer, io_timer_channel_mode_t mod
 
 __EXPORT int io_timer_unallocate_timer(unsigned timer);
 
+__EXPORT extern int io_timer_set_dshot_mode(uint8_t timer, unsigned dshot_pwm_rate, uint8_t dma_burst_length);
 
 /**
  * Returns the pin configuration for a specific channel, to be used as GPIO output.

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2018-2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2018, 2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -62,7 +62,7 @@
 typedef struct {
 	uint32_t                hw_ver_rev; /* the version and revision */
 	const px4_hw_mft_item_t *mft;       /* The first entry */
-	uint32_t                entries;    /* the length of the list */
+	uint32_t                entries;    /* the lenght of the list */
 } px4_hw_mft_list_entry_t;
 
 typedef px4_hw_mft_list_entry_t *px4_hw_mft_list_entry;
@@ -129,8 +129,8 @@ static const px4_hw_mft_item_t hw_mft_list_v0540[] = {
 };
 
 static px4_hw_mft_list_entry_t mft_lists[] = {
-	{VPIX32V500, hw_mft_list_v0500,        arraySize(hw_mft_list_v0500)},
-	{VPIX32V540, hw_mft_list_v0540,        arraySize(hw_mft_list_v0540)},  // HolyBro mini no can 2,3
+	{0x0000, hw_mft_list_v0500,        arraySize(hw_mft_list_v0500)},
+	{0x0400, hw_mft_list_v0540,        arraySize(hw_mft_list_v0540)},  // HolyBro mini no can 2,3
 };
 
 /************************************************************************************
@@ -153,7 +153,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 	static px4_hw_mft_list_entry boards_manifest = px4_hw_mft_list_uninitialized;
 
 	if (boards_manifest == px4_hw_mft_list_uninitialized) {
-		uint32_t ver_rev = board_get_hw_version() << 16;
+		uint32_t ver_rev = board_get_hw_version() << 8;
 		ver_rev |= board_get_hw_revision();
 
 		for (unsigned i = 0; i < arraySize(mft_lists); i++) {
@@ -164,7 +164,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 		}
 
 		if (boards_manifest == px4_hw_mft_list_uninitialized) {
-			syslog(LOG_ERR, "[boot] Board %08"  PRIx32 " is not supported!\n", ver_rev);
+			syslog(LOG_ERR, "[boot] Board %4"  PRIx32 " is not supported!\n", ver_rev);
 		}
 	}
 

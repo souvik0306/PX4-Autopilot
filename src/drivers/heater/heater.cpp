@@ -64,6 +64,16 @@ Heater::Heater() :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
+#ifdef HEATER_PX4IO
+	_io_fd = px4_open(IO_HEATER_DEVICE_PATH, O_RDWR);
+
+	if (_io_fd < 0) {
+		PX4_ERR("Unable to open heater device path");
+		return;
+	}
+
+#endif
+
 	_heater_status_pub.advertise();
 }
 
@@ -201,7 +211,7 @@ void Heater::Run()
 		// Turn the heater off.
 		_heater_on = false;
 		heater_off();
-		ScheduleDelayed(CONTROLLER_PERIOD_DEFAULT - _controller_time_on_usec);
+		ScheduleDelayed(_controller_period_usec - _controller_time_on_usec);
 
 	} else if (_sensor_accel_sub.update(&sensor_accel)) {
 
@@ -217,11 +227,11 @@ void Heater::Run()
 		_integrator_value = math::constrain(_integrator_value, -0.25f, 0.25f);
 
 		_controller_time_on_usec = static_cast<int>((_param_sens_imu_temp_ff.get() + _proportional_value +
-					   _integrator_value) * static_cast<float>(CONTROLLER_PERIOD_DEFAULT));
+					   _integrator_value) * static_cast<float>(_controller_period_usec));
 
-		_controller_time_on_usec = math::constrain(_controller_time_on_usec, 0, CONTROLLER_PERIOD_DEFAULT);
+		_controller_time_on_usec = math::constrain(_controller_time_on_usec, 0, _controller_period_usec);
 
-		if (fabsf(temperature_delta) < TEMPERATURE_TARGET_THRESHOLD) {
+		if (abs(temperature_delta) < TEMPERATURE_TARGET_THRESHOLD) {
 			_temperature_target_met = true;
 
 		} else {
@@ -229,16 +239,9 @@ void Heater::Run()
 			_temperature_target_met = false;
 		}
 
-		if (_controller_time_on_usec > 0) {
-			// Turn the heater on.
-			_heater_on = true;
-			heater_on();
-			ScheduleDelayed(_controller_time_on_usec);
-
-		} else {
-			// Turn the heater off.
-			ScheduleDelayed(CONTROLLER_PERIOD_DEFAULT);
-		}
+		_heater_on = true;
+		heater_on();
+		ScheduleDelayed(_controller_time_on_usec);
 	}
 
 	publish_status();
@@ -252,7 +255,7 @@ void Heater::publish_status()
 	status.temperature_sensor      = _temperature_last;
 	status.temperature_target      = _param_sens_imu_temp.get();
 	status.temperature_target_met  = _temperature_target_met;
-	status.controller_period_usec  = CONTROLLER_PERIOD_DEFAULT;
+	status.controller_period_usec  = _controller_period_usec;
 	status.controller_time_on_usec = _controller_time_on_usec;
 	status.proportional_value      = _proportional_value;
 	status.integrator_value        = _integrator_value;

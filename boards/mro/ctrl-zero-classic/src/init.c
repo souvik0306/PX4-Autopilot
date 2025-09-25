@@ -107,13 +107,8 @@ __EXPORT void board_on_reset(int status)
 		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT(io_timer_channel_get_as_pwm_input(i)));
 	}
 
-	/*
-	 * On resets invoked from system (not boot) ensure we establish a low
-	 * output state on PWM pins to disarm the ESC and prevent the reset from potentially
-	 * spinning up the motors.
-	 */
 	if (status >= 0) {
-		up_mdelay(100);
+		up_mdelay(6);
 	}
 }
 
@@ -128,6 +123,16 @@ __EXPORT void board_on_reset(int status)
  ************************************************************************************/
 __EXPORT void stm32_boardinitialize(void)
 {
+	// clear all existing MPU configuration from bootloader
+	for (int region = 0; region < CONFIG_ARM_MPU_NREGIONS; region++) {
+		putreg32(region, MPU_RNR);
+		putreg32(0, MPU_RBAR);
+		putreg32(0, MPU_RASR);
+
+		// save
+		putreg32(0, MPU_CTRL);
+	}
+
 	/* Reset PWM first thing */
 	board_on_reset(-1);
 
@@ -191,10 +196,12 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	if (!sdio_dev) {
 		syslog(LOG_ERR, "[boot] Failed to initialize SDIO slot %d\n", 0);
+		return ERROR;
 	}
 
 	if (mmcsd_slotinitialize(0, sdio_dev) != OK) {
 		syslog(LOG_ERR, "[boot] Failed to bind SDIO to the MMC/SD driver\n");
+		return ERROR;
 	}
 
 	/* Assume that the SD card is inserted.  What choice do we have? */

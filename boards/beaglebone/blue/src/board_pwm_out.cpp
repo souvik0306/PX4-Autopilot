@@ -81,3 +81,4 @@ int BBBlueRcPWMOut::send_output_pwm(const uint16_t *pwm, int num_outputs)
 
 	return ret;
 }
+

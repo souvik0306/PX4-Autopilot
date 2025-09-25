@@ -32,4 +32,6 @@
 ############################################################################
 
 add_subdirectory(common)
+
 add_subdirectory(${PX4_CHIP_MANUFACTURER})
+

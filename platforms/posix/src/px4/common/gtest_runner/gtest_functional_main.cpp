@@ -32,7 +32,6 @@
  ****************************************************************************/
 
 #include <gtest/gtest.h>
-#include <fuzztest/init_fuzztest.h>
 
 #include <uORB/Subscription.hpp>
 
@@ -41,9 +40,6 @@
 int main(int argc, char **argv)
 {
 	testing::InitGoogleTest(&argc, argv);
-
-	fuzztest::ParseAbslFlags(argc, argv);
-	fuzztest::InitFuzzTest(&argc, &argv);
 
 	uORB::Manager::initialize();
 	param_init();

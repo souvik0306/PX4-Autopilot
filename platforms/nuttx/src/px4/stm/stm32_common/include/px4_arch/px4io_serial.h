@@ -166,3 +166,4 @@ private:
 	 */
 	static uint8_t _io_buffer_storage[] px4_cache_aligned_data();
 };
+

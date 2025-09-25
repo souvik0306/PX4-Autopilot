@@ -58,3 +58,4 @@ void stop_note()
 }
 
 } /* namespace ToneAlarmInterface */
+

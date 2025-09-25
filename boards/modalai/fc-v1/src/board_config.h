@@ -142,10 +142,9 @@
 #define GPIO_HW_VER_REV_DRIVE  /* PG0 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTG|GPIO_PIN0)
 #define GPIO_HW_REV_SENSE      /* PF5 */  ADC3_GPIO(15)
 #define GPIO_HW_VER_SENSE      /* PF4 */  ADC3_GPIO(14)
-#define HW_INFO_INIT_PREFIX           "V1"
-#define V10006   HW_VER_REV(0x0,0x6) // V1006              Rev 6
-#define V10100   HW_VER_REV(0x1,0x0) // V1010              Rev 0
-
+#define HW_INFO_INIT           {'V','1','x', 'x',0}
+#define HW_INFO_INIT_VER       2 /* Offset in above string of the VER */
+#define HW_INFO_INIT_REV       3 /* Offset in above string of the REV */
 
 /* PWM
  */
@@ -215,11 +214,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_BOARDCTL=y, OR
+ *  CONFIG_LIB_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif
@@ -263,8 +262,6 @@
 
 #define BOARD_NUM_IO_TIMERS 5
 
-// J4 / TELEM3 / UART2
-#define VOXL_ESC_DEFAULT_PORT                      "/dev/ttyS1"
 
 __BEGIN_DECLS
 

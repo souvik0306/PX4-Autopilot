@@ -58,7 +58,7 @@
 #include <drivers/bootloaders/boot_app_shared.h>
 #include <drivers/bootloaders/boot_alt_app_shared.h>
 #include <drivers/drv_watchdog.h>
-#include <lib/crc/crc.h>
+#include <lib/systemlib/crc.h>
 
 //#define DEBUG_APPLICATION_INPLACE    1 /* Never leave defined */
 #define DEBUG_NO_FW_UPDATE           1 /* With DEBUG_APPLICATION_INPLACE
@@ -846,8 +846,6 @@ static flash_error_t file_read_and_program(const uavcan_Path_t *fw_path, uint8_t
 
 		request.offset  += length;
 		bootloader.percentage_done = (request.offset / a_percent);
-
-		watchdog_pet();
 
 	} while (request.offset < fw_image_size &&
 		 length == sizeof(response.data)  &&

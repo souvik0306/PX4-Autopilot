@@ -32,9 +32,9 @@
 ############################################################################
 
 # nuttx uses internal work queue currently
-if(NOT "${PX4_PLATFORM}" MATCHES "nuttx")
+if (NOT "${PX4_PLATFORM}" MATCHES "nuttx")
 
-	add_library(work_queue STATIC
+	add_library(work_queue
 		dq_addlast.c
 		dq_rem.c
 		dq_remfirst.c

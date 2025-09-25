@@ -69,6 +69,7 @@
 #include <px4_platform_common/init.h>
 #include <px4_platform/gpio.h>
 
+#include <drivers/drv_pwm_output.h>
 #include <px4_arch/io_timer.h>
 
 # if defined(FLASH_BASED_PARAMS)
@@ -180,7 +181,8 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 #endif // FLASH_BASED_PARAMS
 
 	/* Configure the HW based on the manifest */
-	//px4_platform_configure();
+
+	px4_platform_configure();
 
 	return OK;
 }

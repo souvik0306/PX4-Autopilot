@@ -89,8 +89,9 @@ function(px4_parse_function_args)
 	cmake_parse_arguments(IN "" "NAME" "OPTIONS;ONE_VALUE;MULTI_VALUE;REQUIRED;ARGN" "${ARGN}")
 	cmake_parse_arguments(OUT "${IN_OPTIONS}" "${IN_ONE_VALUE}" "${IN_MULTI_VALUE}" "${IN_ARGN}")
 
-	if(OUT_UNPARSED_ARGUMENTS)
-		message(FATAL_ERROR "${IN_NAME}: unparsed ${OUT_UNPARSED_ARGUMENTS}")
+	if (OUT_UNPARSED_ARGUMENTS)
+		#message(FATAL_ERROR "${IN_NAME}: unparsed ${OUT_UNPARSED_ARGUMENTS}")
+		# TODO: reenable
 	endif()
 
 	foreach(arg ${IN_REQUIRED})

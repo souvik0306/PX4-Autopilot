@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2016-2022 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2016 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -111,8 +111,6 @@
  *
  * Note that these are unshifted addresses.
  */
-
-#define BOARD_MTD_NUM_EEPROM        2 /* MTD: base_eeprom, imu_eeprom*/
 #define PX4_I2C_OBDEV_SE050         0x48
 
 #define GPIO_I2C4_DRDY1_BMP388      /* PG5  */  (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTG|GPIO_PIN5)
@@ -179,19 +177,26 @@
 
 /* HW Version and Revision drive signals Default to 1 to detect */
 
-#define BOARD_HAS_HW_SPLIT_VERSIONING
+#define BOARD_HAS_HW_VERSIONING
 
 #define GPIO_HW_VER_REV_DRIVE  /* PG0 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTG|GPIO_PIN0)
 #define GPIO_HW_REV_SENSE      /* PF5 */  ADC3_GPIO(15)
 #define GPIO_HW_VER_SENSE      /* PF4 */  ADC3_GPIO(14)
-#define HW_INFO_INIT_PREFIX           "V5X"
+#define HW_INFO_INIT           {'V','5','X','x', 'x',0}
+#define HW_INFO_INIT_VER       3 /* Offset in above string of the VER */
+#define HW_INFO_INIT_REV       4 /* Offset in above string of the REV */
 #define BOARD_NUM_SPI_CFG_HW_VERSIONS 3
-
-#define V5X_0     HW_FMUM_ID(0x0)   // FMUV5X, Auterion     FMUv5x RC13 (baro2 BMP388 on I2C4) Sensor Set Rev 0
-#define V5X_1     HW_FMUM_ID(0x1)   // FMUV5X, Auterion, HB FMUv5x RC15 (baro2 BMP388 on I2C2) Sensor Set Rev 1
-#define V5X_2     HW_FMUM_ID(0x2)   // FMUV5X, HB           FMUv5x                             Sensor Set Rev 2
-
-#define UAVCAN_NUM_IFACES_RUNTIME 1
+// Base                   FMUM
+#define V5X00   HW_VER_REV(0x0,0x0) // FMUV5X,                 Rev 0
+#define V5X10   HW_VER_REV(0x1,0x0) // NO PX4IO,               Rev 0
+#define V5X01   HW_VER_REV(0x0,0x1) // FMUV5X I2C2 BMP388,     Rev 1
+#define V5X02   HW_VER_REV(0x0,0x2) // FMUV5X,                 Rev 2
+#define V5X90   HW_VER_REV(0x9,0x0) // NO USB,                 Rev 0
+#define V5X91   HW_VER_REV(0x9,0x1) // NO USB I2C2 BMP388,     Rev 1
+#define V5X92   HW_VER_REV(0x9,0x2) // NO USB I2C2 BMP388,     Rev 2
+#define V5Xa0   HW_VER_REV(0xa,0x0) // NO USB (Q),             Rev 0
+#define V5Xa1   HW_VER_REV(0xa,0x1) // NO USB (Q) I2C2 BMP388, Rev 1
+#define V5Xa2   HW_VER_REV(0xa,0x2) // NO USB (Q) I2C2 BMP388, Rev 2
 
 /* HEATER
  * PWM in future
@@ -236,8 +241,8 @@
 #define GPIO_VDD_3V3_SD_CARD_EN         /* PC13 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN13)
 
 /* MCP23009 GPIO expander */
-#define BOARD_GPIO_VDD_5V_COMP_VALID           "/dev/gpio4"
-#define BOARD_GPIO_VDD_5V_CAN1_GPS1_VALID      "/dev/gpio5"
+#define BOARD_GPIO_VDD_5V_COMP_VALID           "/dev/gpin4"
+#define BOARD_GPIO_VDD_5V_CAN1_GPS1_VALID      "/dev/gpin5"
 
 /* Spare GPIO */
 
@@ -286,11 +291,10 @@
 #define HRT_PPM_CHANNEL         /* T8C1 */  1  /* use capture/compare channel 1 */
 #define GPIO_PPM_IN             /* PI5 T8C1 */ GPIO_TIM8_CH1IN_2
 
-/* Some RC protocols are bi-directional, therefore we need a half-duplex UART */
+/* RC Serial port */
+
+#define RC_SERIAL_PORT                     "/dev/ttyS5"
 #define RC_SERIAL_SINGLEWIRE
-/* The STM32 UART by default wires half-duplex mode to the TX pin, but our
- * signal in routed to the RX pin, so we need to swap the pins */
-#define RC_SERIAL_SWAP_RXTX
 
 /* Input Capture Channels. */
 #define INPUT_CAP1_TIMER                  5
@@ -339,11 +343,11 @@
 /* SD card bringup does not work if performed on the IDLE thread because it
  * will cause waiting.  Use either:
  *
- *  CONFIG_BOARDCTL=y, OR
+ *  CONFIG_LIB_BOARDCTL=y, OR
  *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
  */
 
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_BOARDCTL) && \
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
    !defined(CONFIG_BOARD_INITTHREAD)
 #  warning SDIO initialization cannot be perfomed on the IDLE thread
 #endif
@@ -419,15 +423,7 @@
 		GPIO_nSAFETY_SWITCH_LED_OUT_INIT, \
 		GPIO_SAFETY_SWITCH_IN,            \
 		GPIO_PG6,                         \
-		GPIO_nARMED_INIT,                  \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C1_SCL), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C1_SDA), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C2_SCL), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C2_SDA), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C3_SCL), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C3_SDA), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C4_SCL), \
-		PX4_MAKE_GPIO_OUTPUT_CLEAR(GPIO_I2C4_SDA), \
+		GPIO_nARMED_INIT                  \
 	}
 
 #define BOARD_ENABLE_CONSOLE_BUFFER

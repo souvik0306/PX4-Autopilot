@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file hrt.c
+ * @file drv_hrt.c
  *
  * High-resolution timer callouts and timekeeping.
  *
@@ -72,6 +72,33 @@
 #  define hrtinfo(x...)
 #endif
 
+#if !defined(CONFIG_BUILD_FLAT)
+#include <px4_platform_common/defines.h>
+#include <px4_platform/board_ctrl.h>
+#include <px4_platform_common/sem.h>
+
+#define HRT_ENTRY_QUEUE_MAX_SIZE 3
+static px4_sem_t g_wait_sem;
+static struct hrt_call *next_hrt_entry[HRT_ENTRY_QUEUE_MAX_SIZE];
+static int hrt_entry_queued = 0;
+static bool suppress_entry_queue_error = false;
+static bool hrt_entry_queue_error = false;
+
+void hrt_usr_call(void *arg)
+{
+	// This is called from hrt interrupt
+	if (hrt_entry_queued < HRT_ENTRY_QUEUE_MAX_SIZE) {
+		next_hrt_entry[hrt_entry_queued++] = (struct hrt_call *)arg;
+
+	} else {
+		hrt_entry_queue_error = true;
+	}
+
+	px4_sem_post(&g_wait_sem);
+}
+
+#endif
+
 #ifdef HRT_TIMER
 
 /* HRT configuration */
@@ -79,11 +106,7 @@
 # define HRT_TIMER_BASE		STM32_TIM1_BASE
 # define HRT_TIMER_POWER_REG	STM32_RCC_APB2ENR
 # define HRT_TIMER_POWER_BIT	RCC_APB2ENR_TIM1EN
-#if defined(CONFIG_ARCH_CHIP_STM32H7)
-# define HRT_TIMER_VECTOR	STM32_IRQ_TIMCC
-#else
 # define HRT_TIMER_VECTOR	STM32_IRQ_TIM1CC
-#endif
 # define HRT_TIMER_CLOCK	STM32_APB2_TIM1_CLKIN
 # if CONFIG_STM32_TIM1
 #  error must not set CONFIG_STM32_TIM1=y and HRT_TIMER=1
@@ -160,17 +183,8 @@
 # if CONFIG_STM32_TIM11
 #  error must not set CONFIG_STM32_TIM11=y and HRT_TIMER=11
 # endif
-#elif HRT_TIMER == 12
-# define HRT_TIMER_BASE		STM32_TIM12_BASE
-# define HRT_TIMER_POWER_REG	STM32_RCC_APB1ENR
-# define HRT_TIMER_POWER_BIT	RCC_APB1LENR_TIM12EN
-# define HRT_TIMER_VECTOR	STM32_IRQ_TIM12
-# define HRT_TIMER_CLOCK	STM32_APB1_TIM12_CLKIN
-# if CONFIG_STM32_TIM12
-#  error must not set CONFIG_STM32_TIM12=y and HRT_TIMER=12
-# endif
 #else
-# error HRT_TIMER must be a value between 1 and 12
+# error HRT_TIMER must be a value between 1 and 11
 #endif
 
 /*
@@ -236,6 +250,7 @@
 /*
  * Specific registers and bits used by HRT sub-functions
  */
+/* FIXME! There is an interaction in the CCMR registers that prevents using Chan 1 as the timer and chan 2 as the PPM*/
 #if HRT_TIMER_CHANNEL == 1
 # define rCCR_HRT	rCCR1			/* compare register for HRT */
 # define DIER_HRT	GTIM_DIER_CC1IE		/* interrupt enable for HRT */
@@ -309,12 +324,13 @@ int hrt_ioctl(unsigned int cmd, unsigned long arg);
 #  define GTIM_CCER_CC4NP 0
 #  define PPM_EDGE_FLIP
 # endif
+/* FIXME! There is an interaction in the CCMR registers that prevents using Chan 1 as the timer and chan 2 as the PPM*/
 # if HRT_PPM_CHANNEL == 1
 #  define rCCR_PPM	rCCR1			/* capture register for PPM */
 #  define DIER_PPM	GTIM_DIER_CC1IE		/* capture interrupt (non-DMA mode) */
 #  define SR_INT_PPM	GTIM_SR_CC1IF		/* capture interrupt (non-DMA mode) */
 #  define SR_OVF_PPM	GTIM_SR_CC1OF		/* capture overflow (non-DMA mode) */
-#  define CCMR1_PPM	(1 << 0)		/* not on TI1/TI2 */
+#  define CCMR1_PPM	1			/* not on TI1/TI2 */
 #  define CCMR2_PPM	0			/* on TI3, not on TI4 */
 #  define CCER_PPM	(GTIM_CCER_CC1E | GTIM_CCER_CC1P | GTIM_CCER_CC1NP) /* CC1, both edges */
 #  define CCER_PPM_FLIP	GTIM_CCER_CC1P
@@ -323,7 +339,7 @@ int hrt_ioctl(unsigned int cmd, unsigned long arg);
 #  define DIER_PPM	GTIM_DIER_CC2IE		/* capture interrupt (non-DMA mode) */
 #  define SR_INT_PPM	GTIM_SR_CC2IF		/* capture interrupt (non-DMA mode) */
 #  define SR_OVF_PPM	GTIM_SR_CC2OF		/* capture overflow (non-DMA mode) */
-#  define CCMR1_PPM	(1 << 8)		/* not on TI1/TI2 */
+#  define CCMR1_PPM	2			/* not on TI1/TI2 */
 #  define CCMR2_PPM	0			/* on TI3, not on TI4 */
 #  define CCER_PPM	(GTIM_CCER_CC2E | GTIM_CCER_CC2P | GTIM_CCER_CC2NP) /* CC2, both edges */
 #  define CCER_PPM_FLIP	GTIM_CCER_CC2P
@@ -333,7 +349,7 @@ int hrt_ioctl(unsigned int cmd, unsigned long arg);
 #  define SR_INT_PPM	GTIM_SR_CC3IF		/* capture interrupt (non-DMA mode) */
 #  define SR_OVF_PPM	GTIM_SR_CC3OF		/* capture overflow (non-DMA mode) */
 #  define CCMR1_PPM	0			/* not on TI1/TI2 */
-#  define CCMR2_PPM	(1 << 0)		/* on TI3, not on TI4 */
+#  define CCMR2_PPM	1			/* on TI3, not on TI4 */
 #  define CCER_PPM	(GTIM_CCER_CC3E | GTIM_CCER_CC3P | GTIM_CCER_CC3NP) /* CC3, both edges */
 #  define CCER_PPM_FLIP	GTIM_CCER_CC3P
 # elif HRT_PPM_CHANNEL == 4
@@ -342,7 +358,7 @@ int hrt_ioctl(unsigned int cmd, unsigned long arg);
 #  define SR_INT_PPM	GTIM_SR_CC4IF		/* capture interrupt (non-DMA mode) */
 #  define SR_OVF_PPM	GTIM_SR_CC4OF		/* capture overflow (non-DMA mode) */
 #  define CCMR1_PPM	0			/* not on TI1/TI2 */
-#  define CCMR2_PPM	(1 << 8)		/* on TI3, not on TI4 */
+#  define CCMR2_PPM	2			/* on TI3, not on TI4 */
 #  define CCER_PPM	(GTIM_CCER_CC4E | GTIM_CCER_CC4P | GTIM_CCER_CC4NP) /* CC4, both edges */
 #  define CCER_PPM_FLIP	GTIM_CCER_CC4P
 # else
@@ -731,6 +747,16 @@ hrt_init(void)
 	/* configure the PPM input pin */
 	px4_arch_configgpio(GPIO_PPM_IN);
 #endif
+
+#if !defined(CONFIG_BUILD_FLAT)
+	/* Create a semaphore for handling hrt driver callbacks */
+	px4_sem_init(&g_wait_sem, 0, 0);
+	/* this is a signalling semaphore */
+	px4_sem_setprotocol(&g_wait_sem, SEM_PRIO_NONE);
+
+	/* register ioctl callbacks */
+	px4_register_boardct_ioctl(_HRTIOCBASE, hrt_ioctl);
+#endif
 }
 
 /**
@@ -975,5 +1001,97 @@ hrt_call_delay(struct hrt_call *entry, hrt_abstime delay)
 {
 	entry->deadline = hrt_absolute_time() + delay;
 }
+
+#if !defined(CONFIG_BUILD_FLAT)
+/* These functions are inlined in all but NuttX protected/kernel builds */
+
+latency_info_t get_latency(uint16_t bucket_idx, uint16_t counter_idx)
+{
+	latency_info_t ret = {latency_buckets[bucket_idx], latency_counters[counter_idx]};
+	return ret;
+}
+
+void reset_latency_counters(void)
+{
+	for (int i = 0; i <= get_latency_bucket_count(); i++) {
+		latency_counters[i] = 0;
+	}
+}
+
+/* board_ioctl interface for user-space hrt driver */
+int
+hrt_ioctl(unsigned int cmd, unsigned long arg)
+{
+	hrt_boardctl_t *h = (hrt_boardctl_t *)arg;
+
+	switch (cmd) {
+	case HRT_WAITEVENT: {
+			irqstate_t flags;
+			px4_sem_wait(&g_wait_sem);
+			/* Atomically update the pointer to user side hrt entry */
+			flags = px4_enter_critical_section();
+
+			/* This should be always true, but check it anyway */
+			if (hrt_entry_queued > 0) {
+				*(struct hrt_call **)arg = next_hrt_entry[--hrt_entry_queued];
+				next_hrt_entry[hrt_entry_queued] = NULL;
+
+			} else {
+				hrt_entry_queue_error = true;
+			}
+
+			px4_leave_critical_section(flags);
+
+			/* Warn once for entry queue being full */
+			if (hrt_entry_queue_error && !suppress_entry_queue_error) {
+				PX4_ERR("HRT entry error, queue size now %d", hrt_entry_queued);
+				suppress_entry_queue_error = true;
+			}
+		}
+		break;
+
+	case HRT_ABSOLUTE_TIME:
+		*(hrt_abstime *)arg = hrt_absolute_time();
+		break;
+
+	case HRT_CALL_AFTER:
+		hrt_call_after(h->entry, h->time, (hrt_callout)hrt_usr_call, h->entry);
+		break;
+
+	case HRT_CALL_AT:
+		hrt_call_at(h->entry, h->time, (hrt_callout)hrt_usr_call, h->entry);
+		break;
+
+	case HRT_CALL_EVERY:
+		hrt_call_every(h->entry, h->time, h->interval, (hrt_callout)hrt_usr_call, h->entry);
+		break;
+
+	case HRT_CANCEL:
+		if (h && h->entry) {
+			hrt_cancel(h->entry);
+
+		} else {
+			PX4_ERR("HRT_CANCEL called with NULL entry");
+		}
+
+		break;
+
+	case HRT_GET_LATENCY: {
+			latency_boardctl_t *latency = (latency_boardctl_t *)arg;
+			latency->latency = get_latency(latency->bucket_idx, latency->counter_idx);
+		}
+		break;
+
+	case HRT_RESET_LATENCY:
+		reset_latency_counters();
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	return OK;
+}
+#endif
 
 #endif /* HRT_TIMER */

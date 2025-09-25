@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file tfmini_parser.cpp
+ * @file modified from sf0x_parser.cpp
  * @author Lorenz Meier <lm@inf.ethz.ch>
  * @author Chuong Nguyen <chnguye7@asu.edu>
  * @author Ayush Gaud <ayush.gaud@gmail.com>
@@ -58,7 +58,7 @@ const char *parser_state[] = {
 	"5_GOT_STRENGTH_L",
 	"6_GOT_STRENGTH_H",
 	"7_GOT_PRESERVED",
-	"8_GOT_QUALITY",
+	"8_GOT_QUALITY"
 	"9_GOT_CHECKSUM"
 };
 #endif

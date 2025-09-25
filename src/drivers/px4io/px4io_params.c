@@ -43,6 +43,18 @@
 #include <parameters/param.h>
 
 /**
+ * Set usage of IO board
+ *
+ * Can be used to use a configure the use of the IO board.
+ *
+ * @value 0 IO PWM disabled (RC only)
+ * @value 1 IO enabled (RC & PWM)
+ * @reboot_required true
+ * @group System
+ */
+PARAM_DEFINE_INT32(SYS_USE_IO, 1);
+
+/**
  * S.BUS out
  *
  * Set to 1 to enable S.BUS version 1 output instead of RSSI.

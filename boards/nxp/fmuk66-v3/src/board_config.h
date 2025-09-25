@@ -120,7 +120,7 @@ __END_DECLS
 #define GPIO_SPEKTRUM_P_EN          (GPIO_HIGHDRIVE | GPIO_OUTPUT_ONE | PIN_PORTA | PIN7)
 
 /* For binding the Spektrum 3-pin interfaces is used with it TX (output)
- * as an input Therefore we drive are UARTx_RX (normally an input) as an
+ * as an input Therefore we drive are UARTx_RX (normaly an input) as an
  * output
  */
 
@@ -293,7 +293,7 @@ __END_DECLS
 #define GPIO_USB_VBUS_VALID         /* PTE8 */ (GPIO_PULLUP | PIN_PORTE | PIN8)
 
 /* PWM input driver. Use FMU PWM14 pin
- * todo:design this
+ * todo:desing this
  */
 #define PWMIN_TIMER		0
 #define PWMIN_TIMER_CHANNEL	2
@@ -462,7 +462,7 @@ void board_peripheral_reset(int ms);
  *
  ************************************************************************************/
 
-#if defined(CONFIG_BOARDCTL) || defined(CONFIG_BOARD_INITIALIZE)
+#if defined(CONFIG_LIB_BOARDCTL) || defined(CONFIG_BOARD_INITIALIZE)
 int fmuk66_bringup(void);
 #endif
 

@@ -56,7 +56,7 @@
 
 using namespace time_literals;
 
-#define ULANDING_MEASURE_INTERVAL       12_ms
+#define ULANDING_MEASURE_INTERVAL       10_ms
 #define ULANDING_MAX_DISTANCE	        50.0f
 #define ULANDING_MIN_DISTANCE	        0.315f
 #define ULANDING_VERSION	        1
@@ -71,7 +71,7 @@ using namespace time_literals;
 
 /**
  * Assume standard deviation to be equal to sensor resolution.
- * Static bench tests have shown that the sensor output does
+ * Static bench tests have shown that the sensor ouput does
  * not vary if the unit is not moved.
  */
 #define SENS_VARIANCE           0.045f * 0.045f

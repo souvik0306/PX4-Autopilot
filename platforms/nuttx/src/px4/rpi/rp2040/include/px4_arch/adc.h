@@ -33,3 +33,4 @@
 #pragma once
 
 #include "../../../rpi_common/include/px4_arch/adc.h"
+

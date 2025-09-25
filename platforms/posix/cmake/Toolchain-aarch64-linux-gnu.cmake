@@ -1,13 +1,12 @@
 # arm-linux-gnueabihf-gcc toolchain
 
-set(triple aarch64-linux-gnu)
-
-set(CMAKE_LIBRARY_ARCHITECTURE ${triple})
-set(TOOLCHAIN_PREFIX ${triple})
-
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR arm)
 set(CMAKE_SYSTEM_VERSION 1)
+
+set(triple aarch64-linux-gnu)
+set(CMAKE_LIBRARY_ARCHITECTURE ${triple})
+set(TOOLCHAIN_PREFIX ${triple})
 
 set(CMAKE_C_COMPILER ${TOOLCHAIN_PREFIX}-gcc)
 set(CMAKE_C_COMPILER_TARGET ${triple})

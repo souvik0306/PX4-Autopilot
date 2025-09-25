@@ -35,7 +35,7 @@
  * @file camera_trigger.cpp
  *
  * External camera-IMU synchronisation and triggering, and support for
- * camera manipulation using PWM signals over FMU auxiliary pins.
+ * camera manipulation using PWM signals over FMU auxillary pins.
  *
  * @author Mohammed Kabir <kabir@uasys.io>
  * @author Kelly Steich <kelly.steich@wingtra.com>
@@ -53,7 +53,6 @@
 #include <mathlib/mathlib.h>
 #include <matrix/math.hpp>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <px4_platform_common/module.h>
 #include <systemlib/err.h>
 #include <parameters/param.h>
 
@@ -315,7 +314,7 @@ CameraTrigger::CameraTrigger() :
 	// Advertise critical publishers here, because we cannot advertise in interrupt context
 	camera_trigger_s trigger{};
 
-	_trigger_pub = orb_advertise(ORB_ID(camera_trigger), &trigger);
+	_trigger_pub = orb_advertise_queue(ORB_ID(camera_trigger), &trigger, camera_trigger_s::ORB_QUEUE_LENGTH);
 }
 
 CameraTrigger::~CameraTrigger()
@@ -509,7 +508,7 @@ CameraTrigger::Run()
 	int poll_interval_usec = 50000;
 
 	vehicle_command_s cmd{};
-	unsigned cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED;
+	unsigned cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED;
 	bool need_ack = false;
 
 	// this flag is set when the polling loop is slowed down to allow the camera to power on
@@ -531,7 +530,7 @@ CameraTrigger::Run()
 
 			if (now - _last_trigger_timestamp < _min_interval * 1000) {
 				// triggering too fast, abort
-				cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED;
+				cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_TEMPORARILY_REJECTED;
 
 			} else {
 				if (commandParamToInt(cmd.param7) == 1) {
@@ -544,7 +543,7 @@ CameraTrigger::Run()
 					_one_shot = true;
 				}
 
-				cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED;
+				cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 			}
 
 		} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_TRIGGER_CONTROL) {
@@ -571,7 +570,7 @@ CameraTrigger::Run()
 				_trigger_enabled = false;
 			}
 
-			cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED;
+			cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 		} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_SET_CAM_TRIGG_DIST) {
 			PX4_DEBUG("received DO_SET_CAM_TRIGG_DIST");
@@ -609,7 +608,7 @@ CameraTrigger::Run()
 				_one_shot = true;
 			}
 
-			cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED;
+			cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 		} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_DO_SET_CAM_TRIGG_INTERVAL) {
 			PX4_DEBUG("received DO_SET_CAM_TRIGG_INTERVAL");
@@ -628,7 +627,7 @@ CameraTrigger::Run()
 				}
 			}
 
-			cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED;
+			cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 		} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_OBLIQUE_SURVEY) {
 			PX4_INFO("received OBLIQUE_SURVEY");
@@ -677,7 +676,7 @@ CameraTrigger::Run()
 				_CAMPOS_num_poses = 0;
 			}
 
-			cmd_result = vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED;
+			cmd_result = vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED;
 
 		} else {
 			goto unknown_cmd;
@@ -925,45 +924,7 @@ CameraTrigger::status()
 
 static int usage()
 {
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
-### Description
-
-Camera trigger driver.
-
-This module triggers cameras that are connected to the flight-controller outputs,
-or simple MAVLink cameras that implement the MAVLink trigger protocol.
-
-The driver responds to the following MAVLink trigger commands being found in missions or recieved over MAVLink:
-
-- `MAV_CMD_DO_TRIGGER_CONTROL`
-- `MAV_CMD_DO_DIGICAM_CONTROL`
-- `MAV_CMD_DO_SET_CAM_TRIGG_DIST`
-- `MAV_CMD_OBLIQUE_SURVEY`
-
-The commands cause the driver to trigger camera image capture based on time or distance.
-Each time an image capture is triggered, the `CAMERA_TRIGGER` MAVLink message is emitted.
-
-A "simple MAVLink camera" is one that supports the above command set.
-When configured for this kind of camera, all the driver does is emit the `CAMERA_TRIGGER` MAVLink message as expected.
-The incoming commands must be forwarded to the MAVLink camera, and are automatically emitted to MAVLink channels
-when found in missions.
-
-The driver is configured using [Camera Trigger parameters](../advanced_config/parameter_reference.md#camera-trigger).
-In particular:
-
-- `TRIG_INTERFACE` - How the camera is connected to flight controller (PWM, GPIO, Seagull, MAVLink)
-- `TRIG_MODE` - Distance or time based triggering, with values set by `TRIG_DISTANCE` and `TRIG_INTERVAL`.
-
-[Setup/usage information](../camera/index.md).
-)DESCR_STR");
-	PRINT_MODULE_USAGE_NAME("camera_trigger", "driver");
-	PRINT_MODULE_USAGE_SUBCATEGORY("camera");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("stop","Stop driver");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("status","Print driver status information");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("test","Trigger one image (not logged or forwarded to GCS)");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("test_power","Toggle power");
+	PX4_INFO("usage: camera_trigger {start|stop|status|test|test_power}\n");
 	return 1;
 }
 

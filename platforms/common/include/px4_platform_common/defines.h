@@ -39,9 +39,7 @@
 
 #pragma once
 
-#include <sys/ioctl.h>
-#include <px4_boardconfig.h>
-
+#include <px4_platform_common/log.h>
 
 /****************************************************************************
  * Defines for all platforms.
@@ -64,7 +62,7 @@ static inline constexpr bool PX4_ISFINITE(double x) { return __builtin_isfinite(
  ****************************************************************************/
 
 #define PX4_ROOTFSDIR ""
-#define PX4_STORAGEDIR PX4_ROOTFSDIR CONFIG_BOARD_ROOT_PATH
+#define PX4_STORAGEDIR PX4_ROOTFSDIR "/fs/microsd"
 #define _PX4_IOC(x,y) _IOC(x,y)
 
 // mode for open with O_CREAT
@@ -97,12 +95,9 @@ __BEGIN_DECLS
 extern long PX4_TICKS_PER_SEC;
 __END_DECLS
 
-#define PX4_ROOTFSDIR CONFIG_BOARD_ROOT_PATH
+#define PX4_ROOTFSDIR "."
 
-// Qurt doesn't have an SD card for storage
-#ifndef __PX4_QURT
 #define PX4_STORAGEDIR PX4_ROOTFSDIR
-#endif
 
 /****************************************************************************
  * Defines for POSIX and ROS
@@ -140,12 +135,6 @@ __END_DECLS
 #define M_IVLN10_F		0.43429448f	// 1 / log(10)
 #define M_LOG2_E_F		0.69314718f
 #define M_INVLN2_F		1.44269504f	// 1 / log(2)
-
-/* The M_PI, as stated above, is not C standard. If you need it and
- * it isn't in your math.h file then you can use this instead. */
-#ifndef M_PI
-#define M_PI			3.141592653589793238462643383279502884
-#endif
 
 #define M_DEG_TO_RAD 		0.017453292519943295
 #define M_RAD_TO_DEG 		57.295779513082323

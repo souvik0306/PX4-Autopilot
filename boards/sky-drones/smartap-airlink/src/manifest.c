@@ -62,7 +62,7 @@
 typedef struct {
 	uint32_t                hw_ver_rev; /* the version and revision */
 	const px4_hw_mft_item_t *mft;       /* The first entry */
-	uint32_t                entries;    /* the length of the list */
+	uint32_t                entries;    /* the lenght of the list */
 } px4_hw_mft_list_entry_t;
 
 typedef px4_hw_mft_list_entry_t *px4_hw_mft_list_entry;
@@ -88,7 +88,7 @@ static const px4_hw_mft_item_t hw_mft_list_v0501[] = {
 
 
 static px4_hw_mft_list_entry_t mft_lists[] = {
-	{SDSA0501, hw_mft_list_v0501, arraySize(hw_mft_list_v0501)},
+	{0x0501, hw_mft_list_v0501, arraySize(hw_mft_list_v0501)},
 };
 
 
@@ -112,7 +112,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 	static px4_hw_mft_list_entry boards_manifest = px4_hw_mft_list_uninitialized;
 
 	if (boards_manifest == px4_hw_mft_list_uninitialized) {
-		uint32_t ver_rev = board_get_hw_version() << 16;
+		uint32_t ver_rev = board_get_hw_version() << 8;
 		ver_rev |= board_get_hw_revision();
 
 		for (unsigned i = 0; i < arraySize(mft_lists); i++) {
@@ -123,7 +123,7 @@ __EXPORT px4_hw_mft_item board_query_manifest(px4_hw_mft_item_id_t id)
 		}
 
 		if (boards_manifest == px4_hw_mft_list_uninitialized) {
-			syslog(LOG_ERR, "[boot] Board %08"  PRIx32 " is not supported!\n", ver_rev);
+			syslog(LOG_ERR, "[boot] Board %4"  PRIx32 " is not supported!\n", ver_rev);
 		}
 	}
 

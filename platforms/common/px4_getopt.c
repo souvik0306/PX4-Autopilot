@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file px4_getopt.c
+ * @file px4_getopt.cpp
  * Minimal, thread safe version of getopt
  */
 

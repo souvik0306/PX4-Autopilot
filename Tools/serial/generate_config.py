@@ -136,9 +136,9 @@ serial_ports = {
         "default_baudrate": 1, # set default to an unusable value to detect that this serial port has not been configured
         },
 
-    # EXT2
-    "EXT2": {
-        "label": "EXT2",
+    # Pixhawk Payload Bus
+    "PPB": {
+        "label": "Pixhawk Payload Bus",
         "index": 401,
         "default_baudrate": 57600,
         },
@@ -330,3 +330,4 @@ if serial_params_output_file is not None:
         fid.write(template.render(serial_devices=serial_devices,
             ethernet_configuration=ethernet_configuration,
             commands=commands, serial_ports=serial_ports))
+

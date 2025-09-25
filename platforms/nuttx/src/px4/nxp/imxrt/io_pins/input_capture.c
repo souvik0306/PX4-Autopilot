@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /*
- * @file input_capture.c
+ * @file drv_input_capture.c
  *
  * Servo driver supporting input capture connected to imxrt  timer blocks.
  *

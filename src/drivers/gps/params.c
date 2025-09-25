@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2016-2024 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2016 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -87,14 +87,12 @@ PARAM_DEFINE_INT32(GPS_SAT_INFO, 0);
  * Select the u-blox configuration setup. Most setups will use the default, including RTK and
  * dual GPS without heading.
  *
- * If rover has RTCM corrections from a static base (or other static correction source) coming in on UART2, then select Mode 5.
  * The Heading mode requires 2 F9P devices to be attached. The main GPS will act as rover and output
  * heading information, whereas the secondary will act as moving base.
  * Modes 1 and 2 require each F9P UART1 to be connected to the Autopilot. In addition, UART2 on the
  * F9P units are connected to each other.
  * Modes 3 and 4 only require UART1 on each F9P connected to the Autopilot or Can Node. UART RX DMA is required.
  * RTK is still possible with this setup.
- * Mode 6 is intended for use with a ground control station (not necessarily an RTK correction base).
  *
  * @min 0
  * @max 1
@@ -103,8 +101,6 @@ PARAM_DEFINE_INT32(GPS_SAT_INFO, 0);
  * @value 2 Moving Base (UART1 Connected To Autopilot, UART2 Connected To Rover)
  * @value 3 Heading (Rover With Moving Base UART1 Connected to Autopilot Or Can Node At 921600)
  * @value 4 Moving Base (Moving Base UART1 Connected to Autopilot Or Can Node At 921600)
- * @value 5 Rover with Static Base on UART2 (similar to Default, except coming in on UART2)
- * @value 6 Ground Control Station (UART2 outputs NMEA)
  *
  * @reboot_required true
  * @group GPS
@@ -113,75 +109,20 @@ PARAM_DEFINE_INT32(GPS_UBX_MODE, 0);
 
 
 /**
- * u-blox F9P UART2 Baudrate
- *
- * Select a baudrate for the F9P's UART2 port.
- * In GPS_UBX_MODE 1, 2, and 3, the F9P's UART2 port is configured to send/receive RTCM corrections.
- * Set this to 57600 if you want to attach a telemetry radio on UART2.
- *
- * @min 0
- * @unit B/s
- *
- * @reboot_required true
- * @group GPS
- */
-PARAM_DEFINE_INT32(GPS_UBX_BAUD2, 230400);
-
-/**
- * u-blox protocol configuration for interfaces
- *
- * @min 0
- * @max 32
- * @bit 0 Enable I2C input protocol UBX
- * @bit 1 Enable I2C input protocol NMEA
- * @bit 2 Enable I2C input protocol RTCM3X
- * @bit 3 Enable I2C output protocol UBX
- * @bit 4 Enable I2C output protocol NMEA
- * @bit 5 Enable I2C output protocol RTCM3X
- *
- * @reboot_required true
- * @group GPS
- */
-PARAM_DEFINE_INT32(GPS_UBX_CFG_INTF, 0);
-
-/**
- * Wipes the flash config of UBX modules.
- *
- * Some UBX modules have a FLASH that allows to store persistent configuration that will be loaded on start.
- * PX4 does override all configuration parameters it needs in RAM, which takes precedence over the values in FLASH.
- * However, configuration parameters that are not overriden by PX4 can still cause unexpected problems during flight.
- * To avoid these kind of problems a clean config can be reached by wiping the FLASH on boot.
- *
- * Note: Currently only supported on UBX.
- *
- * @reboot_required true
- * @group GPS
- * @boolean
- */
-PARAM_DEFINE_INT32(GPS_CFG_WIPE, 0);
-
-/**
  * Heading/Yaw offset for dual antenna GPS
  *
  * Heading offset angle for dual antenna GPS setups that support heading estimation.
  *
- * Set this to 0 if the antennas are parallel to the forward-facing direction
- * of the vehicle and the rover (or Unicore primary) antenna is in front.
+ * Set this to 0 if the antennas are parallel to the forward-facing direction of the vehicle and the rover antenna is in
+ * front. The offset angle increases clockwise.
  *
- * The offset angle increases clockwise.
- *
- * Set this to 90 if the rover (or Unicore primary, or Septentrio Mosaic Aux)
- * antenna is placed on the right side of the vehicle and the moving base
- * antenna is on the left side.
- *
- * (Note: the Unicore primary antenna is the one connected on the right as seen
- *        from the top).
+ * Set this to 90 if the rover antenna is placed on the right side of the vehicle and the moving base antenna is on the left side.
  *
  * @min 0
  * @max 360
  * @unit deg
  * @reboot_required true
- * @decimal 3
+ * @decimal 0
  *
  * @group GPS
  */
@@ -195,7 +136,7 @@ PARAM_DEFINE_FLOAT(GPS_YAW_OFFSET, 0.f);
  * Auto-detection will probe all protocols, and thus is a bit slower.
  *
  * @min 0
- * @max 7
+ * @max 5
  * @value 0 Auto detect
  * @value 1 u-blox
  * @value 2 MTK
@@ -217,7 +158,7 @@ PARAM_DEFINE_INT32(GPS_1_PROTOCOL, 1);
  * Auto-detection will probe all protocols, and thus is a bit slower.
  *
  * @min 0
- * @max 6
+ * @max 5
  * @value 0 Auto detect
  * @value 1 u-blox
  * @value 2 MTK
@@ -247,16 +188,14 @@ PARAM_DEFINE_INT32(GPS_2_PROTOCOL, 1);
  * 2 : Use Galileo
  * 3 : Use BeiDou
  * 4 : Use GLONASS
- * 5 : Use NAVIC
  *
  * @min 0
- * @max 63
+ * @max 31
  * @bit 0 GPS (with QZSS)
  * @bit 1 SBAS
  * @bit 2 Galileo
  * @bit 3 BeiDou
  * @bit 4 GLONASS
- * @bit 5 NAVIC
  *
  * @reboot_required true
  * @group GPS
@@ -279,16 +218,14 @@ PARAM_DEFINE_INT32(GPS_1_GNSS, 0);
  * 2 : Use Galileo
  * 3 : Use BeiDou
  * 4 : Use GLONASS
- * 5 : Use NAVIC
  *
  * @min 0
- * @max 63
+ * @max 31
  * @bit 0 GPS (with QZSS)
  * @bit 1 SBAS
  * @bit 2 Galileo
  * @bit 3 BeiDou
  * @bit 4 GLONASS
- * @bit 5 NAVIC
  *
  * @reboot_required true
  * @group GPS

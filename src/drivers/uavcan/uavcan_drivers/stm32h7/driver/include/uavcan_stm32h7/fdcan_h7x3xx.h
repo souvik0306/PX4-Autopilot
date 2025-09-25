@@ -1,6 +1,6 @@
 /*******************************************************************************
   *         The following FDCAN register definitions were taken from:
-  * @file    fdcan_h7x3xx.h
+  * @file    stm32h743xx.h
   * @author  MCD Application Team
   * @version V1.1.0
   * @date    31-August-2017

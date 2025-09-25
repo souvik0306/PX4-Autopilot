@@ -70,7 +70,6 @@
 #include <nuttx/mtd/mtd.h>
 
 #include <perf/perf_counter.h>
-#include <board_config.h>
 
 /************************************************************************************
  * Pre-processor Definitions
@@ -196,8 +195,11 @@ int at24c_nuke(void);
  * Private Data
  ************************************************************************************/
 
-static uint8_t number_of_instances = 0u;
-static struct at24c_dev_s g_at24c[BOARD_MTD_NUM_EEPROM];
+/* At present, only a single AT24 part is supported.  In this case, a statically
+ * allocated state structure may be used.
+ */
+
+static struct at24c_dev_s g_at24c;
 
 /************************************************************************************
  * Private Functions
@@ -260,7 +262,7 @@ void at24c_test(void)
 	unsigned errors = 0;
 
 	for (count = 0; count < 10000; count++) {
-		ssize_t result = at24c_bread(&g_at24c[0].mtd, 0, 1, buf);
+		ssize_t result = at24c_bread(&g_at24c.mtd, 0, 1, buf);
 
 		if (result == ERROR) {
 			if (errors++ > 2) {
@@ -514,6 +516,7 @@ static int at24c_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
 		ret = at24c_eraseall(priv);
 		break;
 
+	case MTDIOC_XIPBASE:
 	default:
 		ret = -ENOTTY; /* Bad command */
 		break;
@@ -535,17 +538,13 @@ static int at24c_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
  *   other functions (such as a block or character driver front end).
  *
  ************************************************************************************/
-int px4_at24c_initialize(FAR struct i2c_master_s *dev,
-			 uint8_t address, FAR struct mtd_dev_s **mtd_dev)
+FAR struct mtd_dev_s *px4_at24c_initialize(FAR struct i2c_master_s *dev,
+		uint8_t address)
 
 {
-	if (number_of_instances >= BOARD_MTD_NUM_EEPROM) {
-		return -ENOMEM;
-	}
-
 	FAR struct at24c_dev_s *priv;
 
-	finfo("dev: %p, mtd_dev %p\n", dev, mtd_dev);
+	finfo("dev: %p\n", dev);
 
 	/* Allocate a state structure (we allocate the structure instead of using
 	 * a fixed, static allocation so that we can handle multiple FLASH devices.
@@ -554,7 +553,7 @@ int px4_at24c_initialize(FAR struct i2c_master_s *dev,
 	 * to be extended to handle multiple FLASH parts on the same I2C bus.
 	 */
 
-	priv = &g_at24c[number_of_instances];
+	priv = &g_at24c;
 
 	if (priv) {
 		/* Initialize the allocated structure */
@@ -609,13 +608,13 @@ int px4_at24c_initialize(FAR struct i2c_master_s *dev,
 		priv->perf_resets_retries = NULL;
 		priv->perf_errors = NULL;
 
-		return ret;
+		return NULL;
 	}
 
-	*mtd_dev = (FAR struct mtd_dev_s *)priv;
-	++number_of_instances;
+	/* Return the implementation-specific state structure as the MTD device */
 
-	return 0;
+	finfo("Return %p\n", priv);
+	return (FAR struct mtd_dev_s *)priv;
 }
 
 /*
@@ -623,5 +622,5 @@ int px4_at24c_initialize(FAR struct i2c_master_s *dev,
  */
 int at24c_nuke(void)
 {
-	return at24c_eraseall(&g_at24c[0]);
+	return at24c_eraseall(&g_at24c);
 }

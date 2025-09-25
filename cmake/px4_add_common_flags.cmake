@@ -105,7 +105,6 @@ function(px4_add_common_flags)
 			-Wno-unknown-warning-option
 			-Wno-unused-const-variable
 			-Wno-varargs
-			-Wno-vla-cxx-extension # FIXME: do not use variable length arrays
 		)
 
 	elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
@@ -145,6 +144,7 @@ function(px4_add_common_flags)
 	list(APPEND c_flags
 		-fno-common
 
+		-Wbad-function-cast
 		-Wnested-externs
 		-Wstrict-prototypes
 	)
@@ -156,13 +156,16 @@ function(px4_add_common_flags)
 	# CXX only flags
 	set(cxx_flags)
 	list(APPEND cxx_flags
+		-fno-exceptions
+		-fno-threadsafe-statics
+
 		-Wreorder
 
 		# disabled warnings
 		-Wno-overloaded-virtual # TODO: fix and remove
 	)
 
-	if((NOT BUILD_TESTING) AND (NOT PX4_CONFIG MATCHES "px4_sitl"))
+	if(NOT CMAKE_BUILD_TYPE STREQUAL FuzzTesting)
 		list(APPEND cxx_flags
 			-fno-rtti
 		)

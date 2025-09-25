@@ -45,3 +45,4 @@ namespace px4_daemon
 std::string get_socket_path(int instance_id);
 
 } // namespace px4_daemon
+

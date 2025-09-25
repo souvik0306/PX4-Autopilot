@@ -76,7 +76,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -159,12 +159,10 @@ int s32k1xx_bringup(void)
 	if (s32k1xx_gpioread(BOARD_REVISION_DETECT_PIN)) {
 		/* STB high -> active CAN phy */
 		s32k1xx_pinconfig(PIN_CAN0_STB  | GPIO_OUTPUT_ONE);
-		s32k1xx_pinconfig(PIN_CAN1_STB  | GPIO_OUTPUT_ONE);
 
 	} else {
 		/* STB low -> active CAN phy */
 		s32k1xx_pinconfig(PIN_CAN0_STB  | GPIO_OUTPUT_ZERO);
-		s32k1xx_pinconfig(PIN_CAN1_STB  | GPIO_OUTPUT_ZERO);
 	}
 
 #endif

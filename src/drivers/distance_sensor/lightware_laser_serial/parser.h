@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file parser.h
+ * @file parser.cpp
  * @author Lorenz Meier <lm@inf.ethz.ch>
  *
  * Declarations of parser for the Lightware laser rangefinder series

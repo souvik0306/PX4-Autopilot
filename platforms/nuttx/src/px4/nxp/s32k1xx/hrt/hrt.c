@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file hrt.c
+ * @file drv_hrt.c
  * Author: Peter van der Perk <peter.vanderperk@nxp.com>
  *         David Sidrane <david_s5@nscdg.com>
  *

@@ -71,10 +71,6 @@ static int io_timer_handler5(int irq, void *context, void *arg);
 static int io_timer_handler6(int irq, void *context, void *arg);
 static int io_timer_handler7(int irq, void *context, void *arg);
 
-#ifdef CONFIG_BOARD_PWM_FREQ
-#define BOARD_PWM_FREQ CONFIG_BOARD_PWM_FREQ
-#endif
-
 #if !defined(BOARD_PWM_FREQ)
 #define BOARD_PWM_FREQ 1000000
 #endif
@@ -259,34 +255,6 @@ static inline int channels_timer(unsigned channel)
 	return timer_io_channels[channel].timer_index;
 }
 
-static uint32_t get_timer_channels(unsigned timer)
-{
-	uint32_t channels = 0;
-	static uint32_t channels_cache[MAX_IO_TIMERS] = {0};
-
-	if (validate_timer_index(timer) < 0) {
-		return channels;
-
-	} else {
-		if (channels_cache[timer] == 0) {
-			/* Gather the channel bits that belong to the timer */
-
-			uint32_t first_channel_index = io_timers_channel_mapping.element[timer].first_channel_index;
-			uint32_t last_channel_index = first_channel_index + io_timers_channel_mapping.element[timer].channel_count;
-
-			for (unsigned chan_index = first_channel_index; chan_index < last_channel_index; chan_index++) {
-				channels |= 1 << chan_index;
-			}
-
-			/* cache them */
-
-			channels_cache[timer] = channels;
-		}
-	}
-
-	return channels_cache[timer];
-}
-
 static uint32_t get_channel_mask(unsigned channel)
 {
 	return io_timer_validate_channel_index(channel) == 0 ? 1 << channel : 0;
@@ -315,7 +283,7 @@ uint32_t io_timer_channel_get_gpio_output(unsigned channel)
 	}
 
 	return timer_io_channels[channel].gpio_portpin | (GPIO_OUTPUT | GPIO_OUTPUT_ZERO | IOMUX_CMOS_OUTPUT | IOMUX_PULL_KEEP
-			| IOMUX_SLEW_FAST);
+			| IOMUX_DRIVE_33OHM  | IOMUX_SPEED_MEDIUM | IOMUX_SLEW_FAST);
 	return 0;
 }
 
@@ -423,134 +391,86 @@ static int allocate_channel(unsigned channel, io_timer_channel_mode_t mode)
 	return rv;
 }
 
-static int timer_set_rate(unsigned timer, unsigned rate)
+static int timer_set_rate(unsigned channel, unsigned rate)
 {
-	int channels = get_timer_channels(timer);
-
 	irqstate_t flags = px4_enter_critical_section();
-
-	for (uint32_t channel = 0; channel < DIRECT_PWM_OUTPUT_CHANNELS; ++channel) {
-		if ((1 << channel) & channels) {
-			rMCTRL(channels_timer(channel)) |= (timer_io_channels[channel].sub_module_bits >> MCTRL_LDOK_SHIFT) << MCTRL_CLDOK_SHIFT
-							   ;
-			rVAL1(channels_timer(channel), timer_io_channels[channel].sub_module) = (BOARD_PWM_FREQ / rate) - 1;
-			rMCTRL(channels_timer(channel)) |= timer_io_channels[channel].sub_module_bits;
-
-		}
-	}
-
+	rMCTRL(channels_timer(channel)) |= (timer_io_channels[channel].sub_module_bits >> MCTRL_LDOK_SHIFT) << MCTRL_CLDOK_SHIFT
+					   ;
+	rVAL1(channels_timer(channel), timer_io_channels[channel].sub_module) = (BOARD_PWM_FREQ / rate) - 1;
+	rMCTRL(channels_timer(channel)) |= timer_io_channels[channel].sub_module_bits;
 	px4_leave_critical_section(flags);
 	return 0;
 }
 
-static inline void io_timer_set_oneshot_mode(unsigned timer)
+static inline void io_timer_set_oneshot_mode(unsigned channel)
 {
-	int channels = get_timer_channels(timer);
-
 	irqstate_t flags = px4_enter_critical_section();
-
-	for (uint32_t channel = 0; channel < DIRECT_PWM_OUTPUT_CHANNELS; ++channel) {
-		if ((1 << channel) & channels) {
-			uint16_t rvalue = rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module);
-			rvalue &= ~SMCTRL_PRSC_MASK;
-			rvalue |= SMCTRL_PRSC_DIV2 | SMCTRL_LDMOD;
-			rMCTRL(channels_timer(channel)) |= (timer_io_channels[channel].sub_module_bits >> MCTRL_LDOK_SHIFT) << MCTRL_CLDOK_SHIFT
-							   ;
-			rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module)  = rvalue;
-			rMCTRL(channels_timer(channel)) |= timer_io_channels[channel].sub_module_bits;
-		}
-	}
-
+	uint16_t rvalue = rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module);
+	rvalue &= ~SMCTRL_PRSC_MASK;
+	rvalue |= SMCTRL_PRSC_DIV2 | SMCTRL_LDMOD;
+	rMCTRL(channels_timer(channel)) |= (timer_io_channels[channel].sub_module_bits >> MCTRL_LDOK_SHIFT) << MCTRL_CLDOK_SHIFT
+					   ;
+	rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module)  = rvalue;
+	rMCTRL(channels_timer(channel)) |= timer_io_channels[channel].sub_module_bits;
 	px4_leave_critical_section(flags);
 
 }
 
-static inline void io_timer_set_PWM_mode(unsigned timer)
+static inline void io_timer_set_PWM_mode(unsigned channel)
 {
-	int channels = get_timer_channels(timer);
-
 	irqstate_t flags = px4_enter_critical_section();
-
-	for (uint32_t channel = 0; channel < DIRECT_PWM_OUTPUT_CHANNELS; ++channel) {
-		if ((1 << channel) & channels) {
-			uint16_t rvalue = rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module);
-			rvalue &= ~(SMCTRL_PRSC_MASK | SMCTRL_LDMOD);
-			rvalue |= SMCTRL_PRSC_DIV16;
-			rMCTRL(channels_timer(channel)) |= (timer_io_channels[channel].sub_module_bits >> MCTRL_LDOK_SHIFT) << MCTRL_CLDOK_SHIFT
-							   ;
-			rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module)  = rvalue;
-			rMCTRL(channels_timer(channel)) |= timer_io_channels[channel].sub_module_bits;
-		}
-	}
-
+	uint16_t rvalue = rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module);
+	rvalue &= ~(SMCTRL_PRSC_MASK | SMCTRL_LDMOD);
+	rvalue |= SMCTRL_PRSC_DIV16;
+	rMCTRL(channels_timer(channel)) |= (timer_io_channels[channel].sub_module_bits >> MCTRL_LDOK_SHIFT) << MCTRL_CLDOK_SHIFT
+					   ;
+	rCTRL(channels_timer(channel), timer_io_channels[channel].sub_module)  = rvalue;
+	rMCTRL(channels_timer(channel)) |= timer_io_channels[channel].sub_module_bits;
 	px4_leave_critical_section(flags);
 }
 
 void io_timer_trigger(unsigned channel_mask)
 {
-	// Any Channels in oneshot?
-
 	int oneshots = io_timer_get_mode_channels(IOTimerChanMode_OneShot) & channel_mask;
+	struct {
+		uint32_t base;
+		uint16_t triggers;
+	} action_cache[MAX_IO_TIMERS] = {0};
+	int actions = 0;
 
-	// Yes do triggering
-	if (oneshots) {
-		struct {
-			uint32_t base;
-			uint16_t triggers;
-		} action_cache[MAX_IO_TIMERS] = {0};
+	/* Pre-calculate the list of channels to Trigger */
+	int mask;
 
-		int actions = 0;
+	for (int timer = 0; timer < MAX_IO_TIMERS; timer++) {
+		action_cache[actions].base = io_timers[timer].base;
 
-		// Get the Timer modules addresses
-		for (int timer = 0; timer < MAX_IO_TIMERS && io_timers[timer].base != 0; timer++) {
-			if (action_cache[actions].base == 0) {
-				action_cache[actions].base = io_timers[timer].base;
+		if (action_cache[actions].base) {
+			uint32_t first_channel_index = io_timers_channel_mapping.element[timer].first_channel_index;
+			uint32_t last_channel_index = first_channel_index + io_timers_channel_mapping.element[timer].channel_count;
 
-			} else if (action_cache[actions].base != io_timers[timer].base) {
-				actions++;
-				action_cache[actions].base = io_timers[timer].base;
-			}
-		}
-
-
-		/* Pre-calculate the list of channels to Trigger for each Timer module */
-
-		int mask;
-		uint32_t channel = 0;
-
-		for (actions = 0; actions < MAX_IO_TIMERS; actions++) {
-			if (action_cache[actions].base == 0) {
-				// All have been processed
-				break;
-			}
-
-			// Group the bits from channels on the same timer
-			for (; channel < MAX_TIMER_IO_CHANNELS && timer_io_channels[channel].val_offset;  channel++) {
-
-				if (io_timers[timer_io_channels[channel].timer_index].base != action_cache[actions].base) {
-					break;
-				}
-
+			for (uint32_t channel = first_channel_index; channel < last_channel_index; channel++) {
 				mask = get_channel_mask(channel);
 
 				if (oneshots & mask) {
 					action_cache[actions].triggers |= timer_io_channels[channel].sub_module_bits;
 				}
 			}
+
+			actions++;
 		}
-
-		/* Now do them all with the shortest delay in between */
-
-		irqstate_t flags = px4_enter_critical_section();
-
-		for (actions = 0; action_cache[actions].base != 0 &&  actions < MAX_IO_TIMERS; actions++) {
-			_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= (action_cache[actions].triggers >> MCTRL_LDOK_SHIFT)
-					<< MCTRL_CLDOK_SHIFT ;
-			_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= action_cache[actions].triggers;
-		}
-
-		px4_leave_critical_section(flags);
 	}
+
+	/* Now do them all with the shortest delay in between */
+
+	irqstate_t flags = px4_enter_critical_section();
+
+	for (actions = 0; action_cache[actions].base != 0 &&  actions < MAX_IO_TIMERS; actions++) {
+		_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= (action_cache[actions].triggers >> MCTRL_LDOK_SHIFT)
+				<< MCTRL_CLDOK_SHIFT ;
+		_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) |= action_cache[actions].triggers;
+	}
+
+	px4_leave_critical_section(flags);
 }
 
 int io_timer_init_timer(unsigned timer, io_timer_channel_mode_t mode)
@@ -587,34 +507,32 @@ int io_timer_init_timer(unsigned timer, io_timer_channel_mode_t mode)
 			break;
 		}
 
-		int channels = get_timer_channels(timer);
+		uint32_t first_channel_index = io_timers_channel_mapping.element[timer].first_channel_index;
+		uint32_t last_channel_index = first_channel_index + io_timers_channel_mapping.element[timer].channel_count;
 
-		for (uint32_t chan = 0; chan < DIRECT_PWM_OUTPUT_CHANNELS; ++chan) {
-			if ((1 << chan) & channels) {
+		for (uint32_t chan = first_channel_index; chan < last_channel_index; chan++) {
 
-				/* Clear all Faults */
-				rFSTS0(timer) = FSTS_FFLAG_MASK;
+			/* Clear all Faults */
+			rFSTS0(timer) = FSTS_FFLAG_MASK;
 
-				rCTRL2(timer, timer_io_channels[chan].sub_module) = SMCTRL2_CLK_SEL_EXT_CLK | SMCTRL2_DBGEN | SMCTRL2_INDEP;
-				rCTRL(timer, timer_io_channels[chan].sub_module)  = SMCTRL_PRSC_DIV16 | SMCTRL_FULL;
-				/* Edge aligned at 0 */
-				rINIT(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
-				rVAL0(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
-				rVAL2(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
-				rVAL4(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
-				rFFILT0(timer) &= ~FFILT_FILT_PER_MASK;
-				rDISMAP0(timer, timer_io_channels[chan].sub_module) = 0xf000;
-				rDISMAP1(timer, timer_io_channels[chan].sub_module) = 0xf000;
-				rOUTEN(timer) |= timer_io_channels[chan].val_offset == PWMA_VAL ? OUTEN_PWMA_EN(1 << timer_io_channels[chan].sub_module)
-						 : OUTEN_PWMB_EN(1 << timer_io_channels[chan].sub_module);
-				rDTSRCSEL(timer) = 0;
-				rMCTRL(timer) = MCTRL_LDOK(1 << timer_io_channels[chan].sub_module);
-				rMCTRL(timer) = timer_io_channels[chan].sub_module_bits;
-			}
+			rCTRL2(timer, timer_io_channels[chan].sub_module) = SMCTRL2_CLK_SEL_EXT_CLK | SMCTRL2_DBGEN | SMCTRL2_INDEP;
+			rCTRL(timer, timer_io_channels[chan].sub_module)  = SMCTRL_PRSC_DIV16 | SMCTRL_FULL;
+			/* Edge aligned at 0 */
+			rINIT(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
+			rVAL0(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
+			rVAL2(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
+			rVAL4(channels_timer(chan), timer_io_channels[chan].sub_module) = 0;
+			rFFILT0(timer) &= ~FFILT_FILT_PER_MASK;
+			rDISMAP0(timer, timer_io_channels[chan].sub_module) = 0xf000;
+			rDISMAP1(timer, timer_io_channels[chan].sub_module) = 0xf000;
+			rOUTEN(timer) |= timer_io_channels[chan].val_offset == PWMA_VAL ? OUTEN_PWMA_EN(1 << timer_io_channels[chan].sub_module)
+					 : OUTEN_PWMB_EN(1 << timer_io_channels[chan].sub_module);
+			rDTSRCSEL(timer) = 0;
+			rMCTRL(timer) = MCTRL_LDOK(1 << timer_io_channels[chan].sub_module);
+			rMCTRL(timer) = timer_io_channels[chan].sub_module_bits;
+			io_timer_set_PWM_mode(chan);
+			timer_set_rate(chan, 50);
 		}
-
-		io_timer_set_PWM_mode(timer);
-		timer_set_rate(timer, 50);
 
 		px4_leave_critical_section(flags);
 	}
@@ -767,71 +685,44 @@ int io_timer_set_enable(bool state, io_timer_channel_mode_t mode, io_timer_chann
 
 	}
 
-	if (masks) {
-		struct {
-			uint32_t sm_ens;
-			uint32_t base;
-			uint32_t io_index;
-			uint32_t gpios[MAX_TIMER_IO_CHANNELS];
-		} action_cache[MAX_IO_TIMERS];
+	struct {
+		uint32_t sm_ens;
+		uint32_t base;
+		uint32_t io_index;
+		uint32_t gpios[MAX_TIMER_IO_CHANNELS];
+	} action_cache[MAX_IO_TIMERS];
 
-		unsigned int actions = 0;
-		memset(action_cache, 0, sizeof(action_cache));
+	memset(action_cache, 0, sizeof(action_cache));
 
-		for (int timer = 0; timer < MAX_IO_TIMERS && io_timers[timer].base != 0; timer++) {
-			if (action_cache[actions].base == 0) {
-				action_cache[actions].base = io_timers[timer].base;
+	for (int chan_index = 0; masks != 0 && chan_index < MAX_TIMER_IO_CHANNELS; chan_index++) {
+		if (masks & (1 << chan_index)) {
+			masks &= ~(1 << chan_index);
 
-			} else if (action_cache[actions].base != io_timers[timer].base) {
-				actions++;
-				action_cache[actions].base = io_timers[timer].base;
+			if (io_timer_validate_channel_index(chan_index) == 0) {
+				uint32_t timer_index = channels_timer(chan_index);
+				action_cache[timer_index].base = io_timers[timer_index].base;
+				action_cache[timer_index].sm_ens |= MCTRL_RUN(1 << timer_io_channels[chan_index].sub_module) |
+								    timer_io_channels[chan_index].sub_module_bits;
+				action_cache[timer_index].gpios[action_cache[timer_index].io_index++] = timer_io_channels[chan_index].gpio_out;
 			}
 		}
+	}
 
-		int chan_index = 0;
+	irqstate_t flags = px4_enter_critical_section();
 
-		for (actions = 0; actions < MAX_IO_TIMERS; actions++) {
-			if (action_cache[actions].base == 0) {
-				// All have been processed
-				break;
-			}
-
-			for (; masks != 0 && chan_index < MAX_TIMER_IO_CHANNELS && timer_io_channels[chan_index].val_offset; chan_index++) {
-
-				if (masks & (1 << chan_index)) {
-
-					if (io_timers[timer_io_channels[chan_index].timer_index].base != action_cache[actions].base) {
-						break;
-					}
-
-					masks &= ~(1 << chan_index);
-
-					action_cache[actions].sm_ens |= MCTRL_RUN(1 << timer_io_channels[chan_index].sub_module) |
-									timer_io_channels[chan_index].sub_module_bits;
-					action_cache[actions].gpios[action_cache[actions].io_index++] = timer_io_channels[chan_index].gpio_out;
-				}
-			}
-		}
-
-		irqstate_t flags = px4_enter_critical_section();
-
-		for (actions = 0; actions < arraySize(action_cache); actions++) {
-			if (action_cache[actions].base == 0) {
-				break;
-			}
-
+	for (unsigned actions = 0; actions < arraySize(action_cache); actions++) {
+		if (action_cache[actions].base != 0) {
 			for (unsigned int index = 0; index < action_cache[actions].io_index; index++) {
 				if (action_cache[actions].gpios[index]) {
 					px4_arch_configgpio(action_cache[actions].gpios[index]);
 				}
+
+				_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) = action_cache[actions].sm_ens;
 			}
-
-			_REG16(action_cache[actions].base, IMXRT_FLEXPWM_MCTRL_OFFSET) = action_cache[actions].sm_ens;
 		}
-
-		px4_leave_critical_section(flags);
 	}
 
+	px4_leave_critical_section(flags);
 	return 0;
 }
 
@@ -877,7 +768,8 @@ uint16_t io_channel_get_ccr(unsigned channel)
 	return value;
 }
 
-uint32_t io_timer_get_group(unsigned timer)
+// The rt has 1:1 group to channel
+uint32_t io_timer_get_group(unsigned group)
 {
-	return get_timer_channels(timer);
+	return get_channel_mask(group);
 }

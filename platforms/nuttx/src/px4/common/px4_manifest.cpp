@@ -58,9 +58,7 @@ static const px4_mft_entry_s mtd_mft = {
 
 static const px4_mft_s default_mft = {
 	.nmft = 1,
-	.mfts =  {
-		&mtd_mft
-	}
+	.mfts = &mtd_mft
 };
 
 
@@ -75,9 +73,9 @@ __EXPORT int px4_mft_configure(const px4_mft_s *mft)
 
 	if (mft != nullptr) {
 		for (uint32_t m = 0; m < mft->nmft; m++) {
-			switch (mft->mfts[m]->type) {
+			switch (mft->mfts[m].type) {
 			case MTD:
-				px4_mtd_config(static_cast<const px4_mtd_manifest_t *>(mft->mfts[m]->pmft));
+				px4_mtd_config(static_cast<const px4_mtd_manifest_t *>(mft->mfts[m].pmft));
 				break;
 
 			case MFT:
@@ -97,20 +95,13 @@ __EXPORT int px4_mft_query(const px4_mft_s *mft, px4_manifest_types_e type,
 
 	if (mft != nullptr) {
 		for (uint32_t m = 0; m < mft->nmft; m++) {
-			if (mft->mfts[m]->type == type)
+			if (mft->mfts[m].type == type)
 				switch (type) {
 				case MTD:
-					return px4_mtd_query(sub, val, nullptr);
+					return px4_mtd_query(sub, val);
 					break;
 
 				case MFT:
-					if (mft->mfts[m]->pmft != nullptr) {
-						system_query_func_t query = (system_query_func_t) mft->mfts[m]->pmft;
-						return query(sub, val, nullptr);
-					}
-
-					break;
-
 				default:
 					rv = -ENODATA;
 					break;

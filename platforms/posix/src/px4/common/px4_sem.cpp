@@ -38,7 +38,6 @@
  */
 
 #include <px4_platform_common/defines.h>
-#include <px4_platform_common/log.h>
 #include <px4_platform_common/workqueue.h>
 #include <px4_platform_common/time.h>
 #include <stdint.h>

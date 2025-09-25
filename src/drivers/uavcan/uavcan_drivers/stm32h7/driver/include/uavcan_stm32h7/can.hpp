@@ -177,8 +177,6 @@ public:
 	void handleTxInterrupt(uavcan::uint64_t utc_usec);
 	void handleRxInterrupt(uavcan::uint8_t fifo_index);
 
-	void handleBusOff();
-
 	/**
 	 * This method is used to count errors and abort transmission on error if necessary.
 	 * This functionality used to be implemented in the SCE interrupt handler, but that approach was
@@ -263,7 +261,7 @@ public:
 #else
 		, num_ifaces_(1)
 #endif
-		, enabledInterfaces_(0x3)
+		, enabledInterfaces_(0x7)
 	{
 		uavcan::StaticAssert < (RxQueueCapacity <= CanIface::MaxRxQueueCapacity) >::check();
 	}
@@ -343,7 +341,8 @@ public:
 	 *
 	 * @return                  Negative value on error; non-negative on success. Refer to constants Err*.
 	 */
-	int init(uavcan::uint32_t &inout_bitrate = BitRateAutoDetect)
+	template <typename DelayCallable>
+	int init(DelayCallable delay_callable, uavcan::uint32_t &inout_bitrate = BitRateAutoDetect)
 	{
 		if (inout_bitrate > 0) {
 			return driver.init(inout_bitrate, CanIface::NormalMode, enabledInterfaces_);
@@ -361,7 +360,7 @@ public:
 
 				const int res = driver.init(inout_bitrate, CanIface::SilentMode, enabledInterfaces_);
 
-				usleep(1000000);
+				delay_callable();
 
 				if (res >= 0) {
 					for (uavcan::uint8_t iface = 0; iface < driver.getNumIfaces(); iface++) {

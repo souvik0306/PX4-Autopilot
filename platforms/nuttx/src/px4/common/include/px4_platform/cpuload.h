@@ -33,12 +33,6 @@
 
 #pragma once
 
-#include <board_config.h>
-
-#ifndef CONFIG_FS_PROCFS_MAX_TASKS
-#define CONFIG_FS_PROCFS_MAX_TASKS 64
-#endif
-
 #ifdef CONFIG_SCHED_INSTRUMENTATION
 
 #include <sched.h>

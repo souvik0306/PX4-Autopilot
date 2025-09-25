@@ -21,14 +21,20 @@ set R /
 #
 ver all
 
-# Load param file location from kconfig
-. ${R}etc/init.d/rc.filepaths
+if mft query -q -k MTD -s MTD_PARAMETERS -v /fs/mtd_params
+then
+	set PARAM_FILE /fs/mtd_params
+fi
+
+if mft query -q -k MTD -s MTD_PARAMETERS -v /dev/eeeprom0
+then
+	set PARAM_FILE /dev/eeeprom0
+fi
 
 #
 # Load parameters.
 #
 param select $PARAM_FILE
-
 if ! param load
 then
 	param reset_all
@@ -57,17 +63,6 @@ fi
 unset BOARD_RC_DEFAULTS
 
 #
-# Optional additional init file: rc.additional_init
-#
-set BOARD_RC_ADDITIONAL_INIT ${R}etc/init.d/rc.additional_init
-if [ -f $BOARD_RC_ADDITIONAL_INIT ]
-then
-	echo "Board additional init: ${BOARD_RC_ADDITIONAL_INIT}"
-	. $BOARD_RC_ADDITIONAL_INIT
-fi
-unset BOARD_RC_ADDITIONAL_INIT
-
-#
 # Start system state indicator.
 #
 rgbled start -X -q
@@ -91,28 +86,10 @@ unset BOARD_RC_SENSORS
 . ${R}etc/init.d/rc.serial
 
 # Check for flow sensor
-if param compare -s SENS_EN_PX4FLOW 1
+if param compare SENS_EN_PX4FLOW 1
 then
 	px4flow start -X &
 fi
-
-if param compare -s IMU_GYRO_CAL_EN 1
-then
-	gyro_calibration start
-fi
-
-
-if param compare -s MBE_ENABLE 1
-then
-	# conservative mag bias estimation
-	param set-default MBE_LEARN_GAIN 5
-	param set-default IMU_GYRO_CUTOFF 20
-	mag_bias_estimator start
-fi
-
-param set-default SENS_MAG_RATE 100
-
-sensors start
 
 uavcannode start
 unset R

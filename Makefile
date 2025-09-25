@@ -1,6 +1,6 @@
 ############################################################################
 #
-# Copyright (c) 2015 - 2024 PX4 Development Team. All rights reserved.
+# Copyright (c) 2015 - 2020 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -129,49 +129,57 @@ else
 	BUILD_DIR_SUFFIX :=
 endif
 
-CMAKE_ARGS ?=
-
 # additional config parameters passed to cmake
 ifdef EXTERNAL_MODULES_LOCATION
-	override CMAKE_ARGS += -DEXTERNAL_MODULES_LOCATION:STRING=$(EXTERNAL_MODULES_LOCATION)
+	CMAKE_ARGS += -DEXTERNAL_MODULES_LOCATION:STRING=$(EXTERNAL_MODULES_LOCATION)
 endif
 
 ifdef PX4_CMAKE_BUILD_TYPE
-	override CMAKE_ARGS += -DCMAKE_BUILD_TYPE=${PX4_CMAKE_BUILD_TYPE}
+	CMAKE_ARGS += -DCMAKE_BUILD_TYPE=${PX4_CMAKE_BUILD_TYPE}
 else
 
 	# Address Sanitizer
 	ifdef PX4_ASAN
-		override CMAKE_ARGS += -DCMAKE_BUILD_TYPE=AddressSanitizer
+		CMAKE_ARGS += -DCMAKE_BUILD_TYPE=AddressSanitizer
 	endif
 
 	# Memory Sanitizer
 	ifdef PX4_MSAN
-		override CMAKE_ARGS += -DCMAKE_BUILD_TYPE=MemorySanitizer
+		CMAKE_ARGS += -DCMAKE_BUILD_TYPE=MemorySanitizer
 	endif
 
 	# Thread Sanitizer
 	ifdef PX4_TSAN
-		override CMAKE_ARGS += -DCMAKE_BUILD_TYPE=ThreadSanitizer
+		CMAKE_ARGS += -DCMAKE_BUILD_TYPE=ThreadSanitizer
 	endif
 
 	# Undefined Behavior Sanitizer
 	ifdef PX4_UBSAN
-		override CMAKE_ARGS += -DCMAKE_BUILD_TYPE=UndefinedBehaviorSanitizer
+		CMAKE_ARGS += -DCMAKE_BUILD_TYPE=UndefinedBehaviorSanitizer
+	endif
+
+	# Fuzz Testing
+	ifdef PX4_FUZZ
+		CMAKE_ARGS += -DCMAKE_BUILD_TYPE=FuzzTesting
 	endif
 
 endif
 
 # Pick up specific Python path if set
 ifdef PYTHON_EXECUTABLE
-	override CMAKE_ARGS += -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+	CMAKE_ARGS += -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+endif
+
+# Check if the microRTPS agent is to be built
+ifdef BUILD_MICRORTPS_AGENT
+  CMAKE_ARGS += -DBUILD_MICRORTPS_AGENT=ON
 endif
 
 # Functions
 # --------------------------------------------------------------------
 # describe how to build a cmake config
 define cmake-build
-	$(eval override CMAKE_ARGS += -DCONFIG=$(1))
+	$(eval CMAKE_ARGS += -DCONFIG=$(1))
 	@$(eval BUILD_DIR = "$(SRC_DIR)/build/$(1)")
 	@# check if the desired cmake configuration matches the cache then CMAKE_CACHE_CHECK stays empty
 	@$(call cmake-cache-check)
@@ -243,7 +251,7 @@ endef
 # Other targets
 # --------------------------------------------------------------------
 
-.PHONY: qgc_firmware px4fmu_firmware misc_qgc_extra_firmware
+.PHONY: qgc_firmware px4fmu_firmware misc_qgc_extra_firmware check_rtps
 
 # QGroundControl flashable NuttX firmware
 qgc_firmware: px4fmu_firmware misc_qgc_extra_firmware
@@ -261,13 +269,22 @@ px4fmu_firmware: \
 
 misc_qgc_extra_firmware: \
 	check_nxp_fmuk66-v3_default \
+	check_nxp_fmurt1062-v1_default \
 	check_mro_x21_default \
 	check_bitcraze_crazyflie_default \
 	check_bitcraze_crazyflie21_default \
 	check_airmind_mindpx-v2_default \
 	sizes
 
-.PHONY: sizes check quick_check uorb_graphs
+# builds with RTPS
+check_rtps: \
+	check_px4_fmu-v3_rtps \
+	check_px4_fmu-v4_rtps \
+	check_px4_fmu-v4pro_rtps \
+	check_px4_sitl_rtps \
+	sizes
+
+.PHONY: sizes check quick_check check_rtps uorb_graphs
 
 sizes:
 	@-find build -name *.elf -type f | xargs size 2> /dev/null || :
@@ -295,18 +312,12 @@ uorb_graphs:
 	@$(MAKE) --no-print-directory px4_fmu-v2_default uorb_graph
 	@$(MAKE) --no-print-directory px4_fmu-v4_default uorb_graph
 	@$(MAKE) --no-print-directory px4_fmu-v5_default uorb_graph
-	@$(MAKE) --no-print-directory px4_fmu-v5x_default uorb_graph
-	@$(MAKE) --no-print-directory px4_fmu-v6x_default uorb_graph
 	@$(MAKE) --no-print-directory px4_sitl_default uorb_graph
 
-px4io_update:
-	@$(MAKE) --no-print-directory px4_io-v2_default
-	@$(MAKE) --no-print-directory cubepilot_io-v2_default
+px4io_update: px4_io-v2_default cubepilot_io-v2_default
 	# px4_io-v2_default
-	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/ark/fmu-v6x/extras/px4_io-v2_default.bin
 	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/holybro/durandal-v1/extras/px4_io-v2_default.bin
 	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/holybro/pix32v5/extras/px4_io-v2_default.bin
-	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/mro/x21/extras/px4_io-v2_default.bin
 	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/mro/x21-777/extras/px4_io-v2_default.bin
 	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/px4/fmu-v2/extras/px4_io-v2_default.bin
 	cp build/px4_io-v2_default/px4_io-v2_default.bin boards/px4/fmu-v3/extras/px4_io-v2_default.bin
@@ -320,41 +331,7 @@ px4io_update:
 	cp build/cubepilot_io-v2_default/cubepilot_io-v2_default.bin boards/cubepilot/cubeyellow/extras/cubepilot_io-v2_default.bin
 	git status
 
-bootloaders_update: \
-	3dr_ctrl-zero-h7-oem-revg_bootloader \
-	ark_fmu-v6x_bootloader \
-	ark_fpv_bootloader \
-	ark_pi6x_bootloader \
-	cuav_nora_bootloader \
-	cuav_x7pro_bootloader \
-	cuav_7-nano_bootloader \
-	cuav_fmu-v6x_bootloader \
-	cuav_x25-evo_bootloader \
-	cubepilot_cubeorange_bootloader \
-	cubepilot_cubeorangeplus_bootloader \
-	hkust_nxt-dual_bootloader \
-	hkust_nxt-v1_bootloader \
-	holybro_durandal-v1_bootloader \
-	holybro_kakuteh7_bootloader \
-	holybro_kakuteh7mini_bootloader \
-	holybro_kakuteh7v2_bootloader \
-	matek_h743_bootloader \
-	matek_h743-mini_bootloader \
-	matek_h743-slim_bootloader \
-        micoair_h743_bootloader \
-        micoair_h743-aio_bootloader \
-	micoair_h743-v2_bootloader \
-	modalai_fc-v2_bootloader \
-	mro_ctrl-zero-classic_bootloader \
-	mro_ctrl-zero-h7_bootloader \
-	mro_ctrl-zero-h7-oem_bootloader \
-	mro_pixracerpro_bootloader \
-	narinfc_h7_bootloader \
-	px4_fmu-v6c_bootloader \
-	px4_fmu-v6u_bootloader \
-	px4_fmu-v6x_bootloader \
-	px4_fmu-v6xrt_bootloader \
-	siyi_n7_bootloader
+bootloaders_update: cuav_nora_bootloader cuav_x7pro_bootloader cubepilot_cubeorange_bootloader holybro_durandal-v1_bootloader holybro_kakuteh7_bootloader matek_h743-slim_bootloader modalai_fc-v2_bootloader mro_ctrl-zero-classic_bootloader mro_ctrl-zero-h7_bootloader mro_ctrl-zero-h7-oem_bootloader mro_pixracerpro_bootloader px4_fmu-v6c_bootloader px4_fmu-v6u_bootloader px4_fmu-v6x_bootloader
 	git status
 
 .PHONY: coverity_scan
@@ -363,7 +340,7 @@ coverity_scan: px4_sitl_default
 
 # Documentation
 # --------------------------------------------------------------------
-.PHONY: parameters_metadata airframe_metadata module_documentation extract_events px4_metadata
+.PHONY: parameters_metadata airframe_metadata module_documentation extract_events px4_metadata doxygen
 
 parameters_metadata:
 	@$(MAKE) --no-print-directory px4_sitl_default metadata_parameters ver_gen
@@ -379,9 +356,15 @@ extract_events:
 
 px4_metadata: parameters_metadata airframe_metadata module_documentation extract_events
 
-# Style
+doxygen:
+	@mkdir -p "$(SRC_DIR)"/build/doxygen
+	@cd "$(SRC_DIR)"/build/doxygen && cmake "$(SRC_DIR)" $(CMAKE_ARGS) -G"$(PX4_CMAKE_GENERATOR)" -DCONFIG=px4_sitl_default -DBUILD_DOXYGEN=ON
+	@$(PX4_MAKE) -C "$(SRC_DIR)"/build/doxygen
+	@touch "$(SRC_DIR)"/build/doxygen/Documentation/.nojekyll
+
+# Astyle
 # --------------------------------------------------------------------
-.PHONY: check_format format check_newlines
+.PHONY: check_format format
 
 check_format:
 	$(call colorecho,'Checking formatting with astyle')
@@ -392,48 +375,37 @@ format:
 	$(call colorecho,'Formatting with astyle')
 	@"$(SRC_DIR)"/Tools/astyle/check_code_style_all.sh --fix
 
-check_newlines:
-	$(call colorecho,'Checking for missing or duplicate newlines at the end of files')
-	@"$(SRC_DIR)"/Tools/astyle/check_newlines.sh
-
 # Testing
 # --------------------------------------------------------------------
-.PHONY: tests tests_coverage tests_mission tests_mission_coverage tests_offboard
+.PHONY: tests tests_coverage tests_mission tests_mission_coverage tests_offboard tests_avoidance
 .PHONY: rostest python_coverage
 
 tests:
-	$(eval override CMAKE_ARGS += -DTESTFILTER=$(TESTFILTER))
+	$(eval CMAKE_ARGS += -DTESTFILTER=$(TESTFILTER))
 	$(eval ARGS += test_results)
 	$(eval ASAN_OPTIONS += color=always:check_initialization_order=1:detect_stack_use_after_return=1)
 	$(eval UBSAN_OPTIONS += color=always)
 	$(call cmake-build,px4_sitl_test)
 
-# work around lcov bug #316; remove once lcov is fixed (see https://github.com/linux-test-project/lcov/issues/316)
-LCOBUG = --ignore-errors mismatch
 tests_coverage:
 	@$(MAKE) clean
 	@$(MAKE) --no-print-directory tests PX4_CMAKE_BUILD_TYPE=Coverage
 	@mkdir -p coverage
-	@lcov --directory build/px4_sitl_test \
-		--base-directory build/px4_sitl_test \
-		--gcov-tool gcov \
-		--capture \
-		$(LCOBUG) \
-		-o coverage/lcov.info
+	@lcov --directory build/px4_sitl_test --base-directory build/px4_sitl_test --gcov-tool gcov --capture -o coverage/lcov.info
 
 
 rostest: px4_sitl_default
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
 
 tests_integration: px4_sitl_default
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
 	@$(MAKE) --no-print-directory px4_sitl_default mavsdk_tests
 	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 20 test/mavsdk_tests/configs/sitl.json
 
 tests_integration_coverage:
 	@$(MAKE) clean
 	@$(MAKE) --no-print-directory px4_sitl_default PX4_CMAKE_BUILD_TYPE=Coverage
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
 	@$(MAKE) --no-print-directory px4_sitl_default mavsdk_tests
 	@"$(SRC_DIR)"/test/mavsdk_tests/mavsdk_test_runner.py --speed-factor 20 test/mavsdk_tests/configs/sitl.json
 	@mkdir -p coverage
@@ -443,13 +415,13 @@ tests_mission: rostest
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_tests_missions.test
 
 rostest_run: px4_sitl_default
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh $(TEST_FILE) mission:=$(TEST_MISSION) vehicle:=$(TEST_VEHICLE)
 
 tests_mission_coverage:
 	@$(MAKE) clean
 	@$(MAKE) --no-print-directory px4_sitl_default PX4_CMAKE_BUILD_TYPE=Coverage
-	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo-classic PX4_CMAKE_BUILD_TYPE=Coverage
+	@$(MAKE) --no-print-directory px4_sitl_default sitl_gazebo PX4_CMAKE_BUILD_TYPE=Coverage
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_test_mission.test mission:=VTOL_mission_1 vehicle:=standard_vtol
 	@$(MAKE) --no-print-directory px4_sitl_default generate_coverage
 
@@ -457,6 +429,10 @@ tests_offboard: rostest
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_tests_offboard_attctl.test
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_tests_offboard_posctl.test
 	@"$(SRC_DIR)"/test/rostest_px4_run.sh mavros_posix_tests_offboard_rpyrt_ctl.test
+
+tests_avoidance: rostest
+	@"$(SRC_DIR)"/test/rostest_avoidance_run.sh mavros_posix_test_avoidance.test
+	@"$(SRC_DIR)"/test/rostest_avoidance_run.sh mavros_posix_test_safe_landing.test
 
 python_coverage:
 	@mkdir -p "$(SRC_DIR)"/build/python_coverage
@@ -471,7 +447,7 @@ python_coverage:
 
 # static analyzers (scan-build, clang-tidy, cppcheck)
 # --------------------------------------------------------------------
-.PHONY: scan-build px4_sitl_default-clang clang-tidy clang-tidy-fix
+.PHONY: scan-build px4_sitl_default-clang clang-tidy clang-tidy-fix clang-tidy-quiet
 .PHONY: cppcheck shellcheck_all validate_module_configs
 
 scan-build:
@@ -497,6 +473,10 @@ clang-tidy: px4_sitl_default-clang
 clang-tidy-fix: px4_sitl_default-clang
 	@cd "$(SRC_DIR)"/build/px4_sitl_default-clang && "$(SRC_DIR)"/Tools/run-clang-tidy.py -header-filter=".*\.hpp" -j$(j_clang_tidy) -fix -p .
 
+# modified version of run-clang-tidy.py to return error codes and only output relevant results
+clang-tidy-quiet: px4_sitl_default-clang
+	@cd "$(SRC_DIR)"/build/px4_sitl_default-clang && "$(SRC_DIR)"/Tools/run-clang-tidy.py -header-filter=".*\.hpp" -j$(j_clang_tidy) -p .
+
 # TODO: Fix cppcheck errors then try --enable=warning,performance,portability,style,unusedFunction or --enable=all
 cppcheck: px4_sitl_default
 	@mkdir -p "$(SRC_DIR)"/build/cppcheck
@@ -509,18 +489,12 @@ shellcheck_all:
 
 validate_module_configs:
 	@find "$(SRC_DIR)"/src/modules "$(SRC_DIR)"/src/drivers "$(SRC_DIR)"/src/lib -name *.yaml -type f \
-	-not -path "$(SRC_DIR)/src/lib/mixer_module/*" \
-	-not -path "$(SRC_DIR)/src/modules/uxrce_dds_client/dds_topics.yaml" \
-	-not -path "$(SRC_DIR)/src/modules/zenoh/dds_topics.yaml" \
-	-not -path "$(SRC_DIR)/src/modules/zenoh/zenoh-pico/*" \
-	-not -path "$(SRC_DIR)/src/lib/events/libevents/*" \
-	-not -path "$(SRC_DIR)/src/lib/cdrstream/*" \
-	-not -path "$(SRC_DIR)/src/lib/crypto/libtommath/*" -print0 | \
+	-not -path "$(SRC_DIR)/src/lib/mixer_module/*" -not -path "$(SRC_DIR)/src/lib/crypto/libtommath/*" -print0 | \
 	xargs -0 "$(SRC_DIR)"/Tools/validate_yaml.py --schema-file "$(SRC_DIR)"/validation/module_schema.yaml
 
 # Cleanup
 # --------------------------------------------------------------------
-.PHONY: clean submodulesclean submodulesupdate distclean
+.PHONY: clean submodulesclean submodulesupdate gazeboclean distclean
 
 clean:
 	@[ ! -d "$(SRC_DIR)/build" ] || find "$(SRC_DIR)/build" -mindepth 1 -maxdepth 1 -type d -exec sh -c "echo {}; cmake --build {} -- clean || rm -rf {}" \; # use generated build system to clean, wipe build directory if it fails
@@ -538,7 +512,10 @@ submodulesupdate:
 	@git submodule update --init --recursive --jobs 4
 	@git fetch --all --tags --recurse-submodules=yes --jobs=4
 
-distclean:
+gazeboclean:
+	@rm -rf ~/.gazebo/*
+
+distclean: gazeboclean
 	@git submodule deinit --force $(SRC_DIR)
 	@rm -rf "$(SRC_DIR)/build"
 	@git clean --force -X "$(SRC_DIR)/msg/" "$(SRC_DIR)/platforms/" "$(SRC_DIR)/posix-configs/" "$(SRC_DIR)/ROMFS/" "$(SRC_DIR)/src/" "$(SRC_DIR)/test/" "$(SRC_DIR)/Tools/"
@@ -549,14 +526,14 @@ distclean:
 # All other targets are handled by PX4_MAKE. Add a rule here to avoid printing an error.
 %:
 	$(if $(filter $(FIRST_ARG),$@), \
-		$(error "Make target $@ not found. It either does not exist or $@ cannot be the first argument. Use '$(MAKE) list_config_targets' to get a list of all possible [configuration] targets."),@#)
+		$(error "Make target $@ not found. It either does not exist or $@ cannot be the first argument. Use '$(MAKE) help|list_config_targets' to get a list of all possible [configuration] targets."),@#)
 
 # Print a list of non-config targets (based on http://stackoverflow.com/a/26339924/1487069)
 help:
 	@echo "Usage: $(MAKE) <target>"
 	@echo "Where <target> is one of:"
 	@$(MAKE) -pRrq -f $(lastword $(MAKEFILE_LIST)) : 2>/dev/null | \
-		awk -v RS= -F: '/(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | sort | \
+		awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | sort | \
 		egrep -v -e '^[^[:alnum:]]' -e '^($(subst $(space),|,$(ALL_CONFIG_TARGETS)))$$' -e '_default$$' -e '^(Makefile)'
 	@echo
 	@echo "Or, $(MAKE) <config_target> [<make_target(s)>]"
@@ -578,20 +555,17 @@ check_px4: $(call make_list,nuttx,"px4") \
 check_nxp: $(call make_list,nuttx,"nxp") \
 	sizes
 
-# helpers for running olddefconfig (nuttx) and px4_savedefconfig on all boards
-.PHONY: all_oldconfig all_px4_savedefconfig
-all_oldconfig:
-	@for targ in $(ALL_CONFIG_TARGETS); do $(MAKE) $$targ oldconfig; done
+ifneq ($(ROS2_WS_DIR),)
+  ROS2_WS_DIR := $(basename ${ROS2_WS_DIR})
+else
+  ROS2_WS_DIR := ~/colcon_ws
+endif
 
-all_px4_savedefconfig:
-	@for targ in $(ALL_CONFIG_TARGETS); do $(MAKE) $$targ px4_savedefconfig; done
+update_ros2_bridge:
+	@Tools/update_px4_ros2_bridge.sh --ws_dir ${ROS2_WS_DIR} --all
 
-.PHONY: failsafe_web run_failsafe_web_server
-failsafe_web:
-	@if ! command -v emcc; then echo -e "Install emscripten first: https://emscripten.org/docs/getting_started/downloads.html\nAnd source the env: source <path>/emsdk_env.sh"; exit 1; fi
-	@$(MAKE) --no-print-directory px4_sitl_default failsafe_test parameters_xml \
-		PX4_CMAKE_BUILD_TYPE=Release BUILD_DIR_SUFFIX=_failsafe_web \
-		CMAKE_ARGS="-DCMAKE_CXX_COMPILER=em++ -DCMAKE_C_COMPILER=emcc"
-run_failsafe_web_server: failsafe_web
-	@cd build/px4_sitl_default_failsafe_web && \
-		python3 -m http.server
+update_px4_ros_com:
+	@Tools/update_px4_ros2_bridge.sh --ws_dir ${ROS2_WS_DIR} --px4_ros_com
+
+update_px4_msgs:
+	@Tools/update_px4_ros2_bridge.sh --ws_dir ${ROS2_WS_DIR} --px4_msgs

@@ -33,7 +33,7 @@
 
 /**
  * @file log.h
- * Platform dependent logging/debug implementation
+ * Platform dependant logging/debug implementation
  */
 
 #pragma once
@@ -70,33 +70,33 @@ __END_DECLS
 /****************************************************************************
  * Messages that should never be filtered or compiled out
  ****************************************************************************/
-#define PX4_INFO(FMT, ...) 	qurt_log_module(_PX4_LOG_LEVEL_INFO, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_INFO_RAW(FMT, ...) 	qurt_log_raw(FMT, ##__VA_ARGS__)
+#define PX4_INFO(FMT, ...) 	qurt_log(_PX4_LOG_LEVEL_INFO, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_INFO_RAW(FMT, ...) 	__px4_log_omit(_PX4_LOG_LEVEL_INFO, FMT, ##__VA_ARGS__)
 
 #if defined(TRACE_BUILD)
 /****************************************************************************
  * Extremely Verbose settings for a Trace build
  ****************************************************************************/
-#define PX4_PANIC(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_PANIC, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_ERR(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_ERROR, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_WARN(FMT, ...) 	qurt_log_module(_PX4_LOG_LEVEL_WARN, MODULE_NAME,  __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_DEBUG(FMT, ...) 	qurt_log_module(_PX4_LOG_LEVEL_DEBUG, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_PANIC(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_PANIC, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_ERR(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_ERROR, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_WARN(FMT, ...) 	qurt_log(_PX4_LOG_LEVEL_WARN,  __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_DEBUG(FMT, ...) 	qurt_log(_PX4_LOG_LEVEL_DEBUG, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
 
 #elif defined(DEBUG_BUILD)
 /****************************************************************************
  * Verbose settings for a Debug build
  ****************************************************************************/
-#define PX4_PANIC(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_PANIC, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_ERR(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_ERROR, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_WARN(FMT, ...) 	qurt_log_module(_PX4_LOG_LEVEL_WARN, MODULE_NAME, __FILE__, __LINE__,  FMT, ##__VA_ARGS__)
-#define PX4_DEBUG(FMT, ...) 	qurt_log_module(_PX4_LOG_LEVEL_DEBUG, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_PANIC(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_PANIC, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_ERR(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_ERROR, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_WARN(FMT, ...) 	qurt_log(_PX4_LOG_LEVEL_WARN, __FILE__, __LINE__,  FMT, ##__VA_ARGS__)
+#define PX4_DEBUG(FMT, ...) 	qurt_log(_PX4_LOG_LEVEL_DEBUG, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
 
 #elif defined(RELEASE_BUILD)
 /****************************************************************************
  * Non-verbose settings for a Release build to minimize strings in build
  ****************************************************************************/
-#define PX4_PANIC(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_PANIC, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_ERR(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_ERROR, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_PANIC(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_PANIC, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_ERR(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_ERROR, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
 #define PX4_WARN(FMT, ...) 	__px4_log_omit(_PX4_LOG_LEVEL_WARN, FMT, ##__VA_ARGS__)
 #define PX4_DEBUG(FMT, ...) 	__px4_log_omit(_PX4_LOG_LEVEL_DEBUG, FMT, ##__VA_ARGS__)
 
@@ -104,19 +104,20 @@ __END_DECLS
 /****************************************************************************
  * Medium verbose settings for a default build
  ****************************************************************************/
-#define PX4_PANIC(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_PANIC, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_ERR(FMT, ...)	qurt_log_module(_PX4_LOG_LEVEL_ERROR, MODULE_NAME, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
-#define PX4_WARN(FMT, ...) 	qurt_log_module(_PX4_LOG_LEVEL_WARN, MODULE_NAME,  __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_PANIC(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_PANIC, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_ERR(FMT, ...)	qurt_log(_PX4_LOG_LEVEL_ERROR, __FILE__, __LINE__, FMT, ##__VA_ARGS__)
+#define PX4_WARN(FMT, ...) 	qurt_log(_PX4_LOG_LEVEL_WARN,  __FILE__, __LINE__, FMT, ##__VA_ARGS__)
 #define PX4_DEBUG(FMT, ...) 	__px4_log_omit(_PX4_LOG_LEVEL_DEBUG, FMT, ##__VA_ARGS__)
 
 #endif
-#define PX4_LOG_NAMED(name, FMT, ...) 	qurt_log_module( _PX4_LOG_LEVEL_INFO, MODULE_NAME, __FILE__, __LINE__, "%s " FMT, name, ##__VA_ARGS__)
-#define PX4_LOG_NAMED_COND(name, cond, FMT, ...) if( cond ) qurt_log_module( _PX4_LOG_LEVEL_INFO, MODULE_NAME, __FILE__, __LINE__, "%s " FMT, name,  ##__VA_ARGS__)
+#define PX4_LOG_NAMED(name, FMT, ...) 	qurt_log( _PX4_LOG_LEVEL_INFO, __FILE__, __LINE__, "%s " FMT, name, ##__VA_ARGS__)
+#define PX4_LOG_NAMED_COND(name, cond, FMT, ...) if( cond ) qurt_log( _PX4_LOG_LEVEL_INFO, __FILE__, __LINE__, "%s " FMT, name,  ##__VA_ARGS__)
 
 #else
 
 #include <inttypes.h>
 #include <stdint.h>
+#include <sys/cdefs.h>
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -130,7 +131,6 @@ __EXPORT void px4_log_modulename(int level, const char *moduleName, const char *
 __attribute__((format(printf, 3, 4)));
 __EXPORT void px4_log_raw(int level, const char *fmt, ...)
 __attribute__((format(printf, 2, 3)));
-__EXPORT void px4_log_history(FILE *out);
 
 #if __GNUC__
 // Allow empty format strings.
@@ -376,28 +376,15 @@ __END_DECLS
 /****************************************************************************
  * Messages that should never be filtered or compiled out
  ****************************************************************************/
-#if defined(PRINTF_LOG)
-#define PX4_INFO(FMT, ...) 	printf(FMT "\n", ##__VA_ARGS__)
-#else
 #define PX4_INFO(FMT, ...) 	__px4_log_modulename(_PX4_LOG_LEVEL_INFO, FMT, ##__VA_ARGS__)
-#endif
 
-#if defined(__NUTTX) || defined(PRINTF_LOG)
+#ifdef __NUTTX
 #define PX4_INFO_RAW		printf
 #else
 #define PX4_INFO_RAW(FMT, ...) 	__px4_log_raw(_PX4_LOG_LEVEL_INFO, FMT, ##__VA_ARGS__)
 #endif
 
-#if defined(PRINTF_LOG)
-/****************************************************************************
- * Direct printf output for minimized dependencies
- ****************************************************************************/
-#define PX4_PANIC(FMT, ...)	printf("Panic: " FMT "\n", ##__VA_ARGS__)
-#define PX4_ERR(FMT, ...)	printf("Error: " FMT "\n", ##__VA_ARGS__)
-#define PX4_WARN(FMT, ...) 	printf("Warn: " FMT "\n", ##__VA_ARGS__)
-#define PX4_DEBUG(FMT, ...) 	printf(FMT "\n", ##__VA_ARGS__)
-
-#elif defined(TRACE_BUILD)
+#if defined(TRACE_BUILD)
 /****************************************************************************
  * Extremely Verbose settings for a Trace build
  ****************************************************************************/
@@ -437,12 +424,3 @@ __END_DECLS
 #define PX4_LOG_NAMED(name, FMT, ...) 	__px4_log_named_cond(name, true, FMT, ##__VA_ARGS__)
 #define PX4_LOG_NAMED_COND(name, cond, FMT, ...) __px4_log_named_cond(name, cond, FMT, ##__VA_ARGS__)
 #endif
-
-#define PX4_ANSI_COLOR_RED     "\x1b[31m"
-#define PX4_ANSI_COLOR_GREEN   "\x1b[32m"
-#define PX4_ANSI_COLOR_YELLOW  "\x1b[33m"
-#define PX4_ANSI_COLOR_BLUE    "\x1b[34m"
-#define PX4_ANSI_COLOR_MAGENTA "\x1b[35m"
-#define PX4_ANSI_COLOR_CYAN    "\x1b[36m"
-#define PX4_ANSI_COLOR_GRAY    "\x1B[37m"
-#define PX4_ANSI_COLOR_RESET   "\x1b[0m"

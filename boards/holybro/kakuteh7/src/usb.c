@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file usb.c
+ * @file px4fmu_usb.c
  *
  * Board-specific USB functions.
  */
@@ -51,7 +51,7 @@
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include <arm_internal.h>
+#include <arm_arch.h>
 #include <chip.h>
 #include <stm32_gpio.h>
 #include <stm32_otg.h>

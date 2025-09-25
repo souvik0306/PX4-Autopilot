@@ -5,10 +5,23 @@
 # NOTE: Script variables are declared/initialized/unset in the rcS script.
 #
 
-#
-# Start Control Allocator
-#
-control_allocator start
+###############################################################################
+#                       Begin Estimator Group Selection                       #
+###############################################################################
+
+ekf2 start &
+
+###############################################################################
+#                        End Estimator Group Selection                        #
+###############################################################################
+
+if param compare SYS_CTRL_ALLOC 1
+then
+	#
+	# Start Control Allocator
+	#
+	control_allocator start
+fi
 
 #
 # Start UUV Attitude Controller.
@@ -16,6 +29,6 @@ control_allocator start
 uuv_att_control start
 
 #
-# Start UUV Position Controller.
+# Start UUV Land Detector.
 #
-uuv_pos_control start
+land_detector start rover

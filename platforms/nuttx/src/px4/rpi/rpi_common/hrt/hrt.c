@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file hrt.c
+ * @file drv_hrt.c
  *
  * High-resolution timer callouts and timekeeping.
  *

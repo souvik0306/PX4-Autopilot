@@ -5,10 +5,23 @@
 # NOTE: Script variables are declared/initialized/unset in the rcS script.
 #
 
-#
-# Start Control Allocator
-#
-control_allocator start
+###############################################################################
+#                       Begin Estimator group selection                       #
+###############################################################################
+
+ekf2 start &
+
+###############################################################################
+#                        End Estimator group selection                        #
+###############################################################################
+
+if param compare SYS_CTRL_ALLOC 1
+then
+	#
+	# Start Control Allocator
+	#
+	control_allocator start
+fi
 
 airspeed_selector start
 
@@ -25,10 +38,8 @@ then
 	mc_autotune_attitude_control start
 fi
 
-fw_rate_control start vtol
 fw_att_control start vtol
-fw_mode_manager start
-fw_lat_lon_control start vtol
+fw_pos_control_l1 start vtol
 fw_autotune_attitude_control start vtol
 
 # Start Land Detector

@@ -42,19 +42,14 @@
 #include <px4_platform_common/tasks.h>
 #include <limits.h>
 
-LockstepComponents::LockstepComponents(bool no_cleanup_on_destroy)
-	: _no_cleanup_on_destroy(no_cleanup_on_destroy)
+LockstepComponents::LockstepComponents()
 {
 	px4_sem_init(&_components_sem, 0, 0);
 }
 
 LockstepComponents::~LockstepComponents()
 {
-	// Trying to destroy a condition variable with threads currently blocked on it results in undefined behavior.
-	// Therefore we allow the caller not to cleanup and let the OS take care of that.
-	if (!_no_cleanup_on_destroy) {
-		px4_sem_destroy(&_components_sem);
-	}
+	px4_sem_destroy(&_components_sem);
 }
 
 int LockstepComponents::register_component()
@@ -89,7 +84,7 @@ void LockstepComponents::unregister_component(int component)
 
 	int components_used_bitset = _components_used_bitset;
 
-	if (_components_progress_bitset == components_used_bitset) {
+	if (_components_progress_bitset == components_used_bitset && components_used_bitset != 0) {
 		_components_progress_bitset = 0;
 		px4_sem_post(&_components_sem);
 	}

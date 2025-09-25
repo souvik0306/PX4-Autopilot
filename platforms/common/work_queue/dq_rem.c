@@ -78,3 +78,4 @@ void dq_rem(dq_entry_t *node, dq_queue_t *queue)
 	node->flink = NULL;
 	node->blink = NULL;
 }
+

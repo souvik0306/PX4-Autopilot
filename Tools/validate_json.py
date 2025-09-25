@@ -50,3 +50,4 @@ for json_file in json_files:
     except:
         print("JSON validation for {:} failed (schema: {:})".format(json_file, schema_file))
         raise
+

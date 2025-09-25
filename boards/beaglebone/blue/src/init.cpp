@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file init.cpp
+ * @file init.c
  *
  * BBBLUE specific initialization
  */

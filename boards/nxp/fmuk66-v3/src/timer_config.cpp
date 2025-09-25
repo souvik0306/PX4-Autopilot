@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /*
- * @file timer_config.cpp
+ * @file timer_config.c
  *
  * Configuration data for the kinetis pwm_servo, input capture and pwm input driver.
  *

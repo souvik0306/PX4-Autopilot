@@ -3,9 +3,6 @@ import codecs
 import os
 
 class RCOutput():
-    """
-        Generates RC scripts for the airframes
-    """
     def __init__(self, groups, board, post_start=False):
 
         result = (  "#\n"
@@ -37,33 +34,33 @@ class RCOutput():
         result += "set AIRFRAME none\n"
         result += "\n"
         for group in groups:
-            result += "# GROUP: %s\n\n" % group.GetType()
-            for airframe in group.GetAirframes():
+            result += "# GROUP: %s\n\n" % group.GetName()
+            for param in group.GetParams():
                 excluded = False
-                for code in airframe.GetArchCodes():
-                    if "{0}".format(code) == board and airframe.GetArchValue(code) == "exclude":
+                for code in param.GetArchCodes():
+                    if "{0}".format(code) == board and param.GetArchValue(code) == "exclude":
                         excluded = True
                 if excluded:
                     continue
 
                 if post_start:
-                    # Path to post-start script
-                    path = airframe.GetPostPath()
+                    # Path to post-start sript
+                    path = param.GetPostPath()
                 else:
                     # Path to start script
-                    path = airframe.GetPath()
+                    path = param.GetPath()
 
                 if not path:
                     continue
 
                 path = os.path.split(path)[1]
 
-                id_val = airframe.GetId()
-                name = airframe.GetFieldValue("short_desc")
-                long_desc = airframe.GetFieldValue("long_desc")
+                id_val = param.GetId()
+                name = param.GetFieldValue("short_desc")
+                long_desc = param.GetFieldValue("long_desc")
 
                 result +=   "#\n"
-                result +=   "# %s\n" % airframe.GetName()
+                result +=   "# %s\n" % param.GetName()
                 result +=   "if param compare SYS_AUTOSTART %s\n" % id_val
                 result +=   "then\n"
                 result +=   "\tset AIRFRAME %s\n" % path
@@ -79,6 +76,12 @@ class RCOutput():
         result += "then\n"
         result += "\techo \"Loading airframe: /etc/init.d/airframes/${AIRFRAME}\"\n"
         result += "\t. /etc/init.d/airframes/${AIRFRAME}\n"
+        if not post_start:
+            result += "else\n"
+            result += "\techo \"ERROR  [init] No file matches SYS_AUTOSTART value found in : /etc/init.d/airframes\"\n"
+            # Reset the configuration
+            result += "\tparam set SYS_AUTOSTART 0\n"
+            result += "\ttone_alarm ${TUNE_ERR}\n"
         result += "fi\n"
         result += "unset AIRFRAME"
         self.output = result

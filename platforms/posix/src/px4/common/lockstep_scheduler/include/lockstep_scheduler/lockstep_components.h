@@ -46,7 +46,7 @@
 class LockstepComponents
 {
 public:
-	LockstepComponents(bool no_cleanup_on_destroy = false);
+	LockstepComponents();
 	~LockstepComponents();
 
 	/**
@@ -69,10 +69,10 @@ public:
 	void wait_for_components();
 
 private:
-	const bool _no_cleanup_on_destroy;
 
 	px4_sem_t _components_sem;
 
 	std::atomic_int _components_used_bitset{0};
 	std::atomic_int _components_progress_bitset{0};
 };
+

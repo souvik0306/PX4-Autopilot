@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2022 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file init.cpp
+ * @file init.c
  *
  * PX4FMU-specific early startup code.  This file implements the
  * board_app_initialize() function that is called early by nsh during startup.
@@ -54,7 +54,9 @@
 #include <errno.h>
 
 #include <nuttx/config.h>
+extern "C" {
 #include <nuttx/board.h>
+}
 #include <nuttx/spi/spi.h>
 #include <nuttx/sdio.h>
 #include <nuttx/mmcsd.h>
@@ -70,7 +72,6 @@
 #include <systemlib/px4_macros.h>
 #include <px4_arch/io_timer.h>
 #include <px4_platform_common/init.h>
-#include <px4_platform_common/px4_manifest.h>
 #include <px4_platform/gpio.h>
 #include <px4_platform/board_determine_hw_info.h>
 #include <px4_platform/board_dma_alloc.h>
@@ -145,13 +146,8 @@ __EXPORT void board_on_reset(int status)
 		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT(io_timer_channel_get_as_pwm_input(i)));
 	}
 
-	/*
-	 * On resets invoked from system (not boot) ensure we establish a low
-	 * output state on PWM pins to disarm the ESC and prevent the reset from potentially
-	 * spinning up the motors.
-	 */
 	if (status >= 0) {
-		up_mdelay(100);
+		up_mdelay(6);
 	}
 }
 
@@ -225,13 +221,6 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	px4_platform_init();
 
-	// Use the default HW_VER_REV(0x0,0x0) for Ramtron
-
-	stm32_spiinitialize();
-
-	/* Configure the HW based on the manifest */
-
-	px4_platform_configure();
 
 	if (OK == board_determine_hw_info()) {
 		syslog(LOG_INFO, "[boot] Rev 0x%1x : Ver 0x%1x %s\n", board_get_hw_revision(), board_get_hw_version(),
@@ -241,13 +230,11 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 		syslog(LOG_ERR, "[boot] Failed to read HW revision and version\n");
 	}
 
-	/* Configure the Actual SPI interfaces (after we determined the HW version)  */
-
 	stm32_spiinitialize();
 
 	board_spi_reset(10, 0xffff);
 
-	/* Configure the DMA allocator */
+	/* configure the DMA allocator */
 
 	if (board_dma_alloc_init() < 0) {
 		syslog(LOG_ERR, "[boot] DMA alloc FAILED\n");
@@ -269,9 +256,8 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 		led_on(LED_RED);
 	}
 
-	int ret;
 #ifdef CONFIG_MMCSD
-	ret = stm32_sdio_initialize();
+	int ret = stm32_sdio_initialize();
 
 	if (ret != OK) {
 		led_on(LED_RED);
@@ -280,11 +266,34 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 #endif /* CONFIG_MMCSD */
 
-	ret = mcp23009_register_gpios(3, 0x25);
+	/* Configure the HW based on the manifest */
 
-	if (ret != OK) {
-		led_on(LED_RED);
-		return ret;
+	px4_platform_configure();
+
+	int hw_version = board_get_hw_version();
+
+	if (hw_version == 0x9 || hw_version == 0xa) {
+		static MCP23009 mcp23009{3, 0x25};
+
+		// No USB
+		if (hw_version == 0x9) {
+			// < P8
+			ret = mcp23009.init(0xf0, 0xf0, 0x0f);
+			// >= P8
+			//ret = mcp23009.init(0xf1, 0xf0, 0x0f);
+		}
+
+		if (hw_version == 0xa) {
+			// < P6
+			//ret = mcp23009.init(0xf0, 0xf0, 0x0f);
+			// >= P6
+			ret = mcp23009.init(0xf1, 0xf0, 0x0f);
+		}
+
+		if (ret != OK) {
+			led_on(LED_RED);
+			return ret;
+		}
 	}
 
 	return OK;

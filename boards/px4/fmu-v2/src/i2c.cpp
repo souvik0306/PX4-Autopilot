@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file i2c.cpp
+ * @file px4fmu_i2c.c
  *
  * Board-specific I2C functions.
  */
@@ -47,14 +47,14 @@ constexpr px4_i2c_bus_t px4_i2c_buses[I2C_BUS_MAX_BUS_ITEMS] = {
 };
 
 
-bool px4_i2c_bus_external(int bus)
+bool px4_i2c_bus_external(const px4_i2c_bus_t &bus)
 {
 	if (HW_VER_FMUV3 == board_get_hw_version()) {
 		/* All FMUV3 2.1 i2c buses are external */
 		return true;
 
 	} else {
-		if (bus != 2) {
+		if (bus.bus != 2) {
 			return true;
 		}
 	}

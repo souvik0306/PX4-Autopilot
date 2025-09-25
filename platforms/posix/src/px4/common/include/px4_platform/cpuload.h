@@ -33,8 +33,6 @@
 
 #pragma once
 
-#define CONFIG_FS_PROCFS_MAX_TASKS 64
-
 __BEGIN_DECLS
 
 __EXPORT void cpuload_monitor_start(void);

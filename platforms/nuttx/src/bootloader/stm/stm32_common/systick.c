@@ -31,7 +31,7 @@
  *
  ****************************************************************************/
 
-#include "arm_internal.h"
+#include "arm_arch.h"
 #include "lib/systick.h"
 #include <nvic.h>
 

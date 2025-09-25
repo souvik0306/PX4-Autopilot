@@ -42,7 +42,7 @@
 #include <fixedmath.h>
 
 #include "dwt.h"
-#include "arm_internal.h"
+#include "arm_arch.h"
 
 #include <nuttx/clock.h>
 

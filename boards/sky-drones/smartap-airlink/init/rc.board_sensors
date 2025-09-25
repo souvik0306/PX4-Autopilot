@@ -31,3 +31,4 @@ lis3mdl -R 2 -X start
 
 # NCP5623 Led driver
 rgbled_ncp5623c -X -a 0x38 start
+

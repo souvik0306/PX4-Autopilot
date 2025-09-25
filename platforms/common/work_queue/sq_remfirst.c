@@ -73,3 +73,4 @@ sq_entry_t *sq_remfirst(sq_queue_t *queue)
 
 	return ret;
 }
+

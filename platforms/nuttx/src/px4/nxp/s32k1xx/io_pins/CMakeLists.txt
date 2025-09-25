@@ -36,6 +36,4 @@ px4_add_library(arch_io_pins
 	pwm_servo.c
 	pwm_trigger.c
 	input_capture.c
-	input_capture.c
-	s32k1xx_pinirq.c
 )

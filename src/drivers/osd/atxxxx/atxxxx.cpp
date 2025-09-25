@@ -241,7 +241,7 @@ OSDatxxxx::add_battery_info(uint8_t pos_x, uint8_t pos_y)
 	int ret = PX4_OK;
 
 	// TODO: show battery symbol based on battery fill level
-	snprintf(buf, sizeof(buf), "%c%5.2f", OSD_SYMBOL_BATT_3, (double)_battery_voltage_v);
+	snprintf(buf, sizeof(buf), "%c%5.2f", OSD_SYMBOL_BATT_3, (double)_battery_voltage_filtered_v);
 	buf[sizeof(buf) - 1] = '\0';
 
 	for (int i = 0; buf[i] != '\0'; i++) {
@@ -330,7 +330,7 @@ OSDatxxxx::update_topics()
 		_battery_sub.copy(&battery);
 
 		if (battery.connected) {
-			_battery_voltage_v = battery.voltage_v;
+			_battery_voltage_filtered_v = battery.voltage_filtered_v;
 			_battery_discharge_mah = battery.discharged_mah;
 			_battery_valid = true;
 
@@ -406,6 +406,10 @@ OSDatxxxx::get_flight_mode(uint8_t nav_state)
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET:
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_PRECLAND:
 		flight_mode = "AUTO";
+		break;
+
+	case vehicle_status_s::NAVIGATION_STATE_AUTO_LANDENGFAIL:
+		flight_mode = "FAILURE";
 		break;
 
 	case vehicle_status_s::NAVIGATION_STATE_ACRO:

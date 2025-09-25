@@ -99,3 +99,4 @@
 //      AVAILABLE                             // DMA1, Stream 5
 //      AVAILABLE                             // DMA1, Stream 6
 //      DMAMAP_USART1_TX    USART1_TX         // DMA1, Stream 7, Channel 5
+

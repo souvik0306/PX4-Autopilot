@@ -76,7 +76,7 @@ public:
 	 * @param meta The uORB metadata (usually from the ORB_ID() macro) for the topic.
 	 * @param instance The instance for multi sub.
 	 */
-	Subscription(const orb_metadata *meta = nullptr, uint8_t instance = 0) :
+	Subscription(const orb_metadata *meta, uint8_t instance = 0) :
 		_orb_id((meta == nullptr) ? ORB_ID::INVALID : static_cast<ORB_ID>(meta->o_id)),
 		_instance(instance)
 	{
@@ -118,8 +118,16 @@ public:
 	bool valid() const { return _node != nullptr; }
 	bool advertised()
 	{
-		if (subscribe()) {
+		if (valid()) {
 			return Manager::is_advertised(_node);
+		}
+
+		// try to initialize
+		if (subscribe()) {
+			// check again if valid
+			if (valid()) {
+				return Manager::is_advertised(_node);
+			}
 		}
 
 		return false;
@@ -130,11 +138,11 @@ public:
 	 */
 	bool updated()
 	{
-		if (subscribe()) {
-			return Manager::updates_available(_node, _last_generation);
+		if (!valid()) {
+			subscribe();
 		}
 
-		return false;
+		return valid() ? Manager::updates_available(_node, _last_generation) : false;
 	}
 
 	/**
@@ -143,11 +151,11 @@ public:
 	 */
 	bool update(void *dst)
 	{
-		if (subscribe()) {
-			return Manager::orb_data_copy(_node, dst, _last_generation, true);
+		if (!valid()) {
+			subscribe();
 		}
 
-		return false;
+		return valid() ? Manager::orb_data_copy(_node, dst, _last_generation, true) : false;
 	}
 
 	/**
@@ -156,11 +164,11 @@ public:
 	 */
 	bool copy(void *dst)
 	{
-		if (subscribe()) {
-			return Manager::orb_data_copy(_node, dst, _last_generation, false);
+		if (!valid()) {
+			subscribe();
 		}
 
-		return false;
+		return valid() ? Manager::orb_data_copy(_node, dst, _last_generation, false) : false;
 	}
 
 	/**
@@ -172,8 +180,6 @@ public:
 	uint8_t  get_instance() const { return _instance; }
 	unsigned get_last_generation() const { return _last_generation; }
 	orb_id_t get_topic() const { return get_orb_meta(_orb_id); }
-
-	ORB_ID orb_id() const { return _orb_id; }
 
 protected:
 

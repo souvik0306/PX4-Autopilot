@@ -17,8 +17,6 @@ menu "Toolchain"
             bool "posix"
         config PLATFORM_QURT
             bool "qurt"
-        config PLATFORM_ROS2
-            bool "ros2"
     endchoice
 
     config BOARD_PLATFORM
@@ -26,7 +24,6 @@ menu "Toolchain"
         default "nuttx" if PLATFORM_NUTTX
         default "posix" if PLATFORM_POSIX
         default "qurt" if PLATFORM_QURT
-        default "ros2" if PLATFORM_ROS2
 
     config BOARD_LOCKSTEP
         bool "Force enable lockstep"
@@ -40,8 +37,8 @@ menu "Toolchain"
         help
             forces nolockstep behaviour, despite REPLAY env variable
 
-    config BOARD_LINUX_TARGET
-        bool "Linux OS Target"
+    config BOARD_LINUX
+        bool "Linux OS"
         depends on PLATFORM_POSIX
         help
             Board Platform is running the Linux operating system
@@ -54,13 +51,6 @@ menu "Toolchain"
         string "Architecture"
         default ""
 
-    config BOARD_LTO
-        bool "(EXPERIMENTAL) Link Time Optimization (LTO)"
-        default n
-        help
-            Enables LTO flag in linker
-            Note: Highly EXPERIMENTAL, furthermore make sure you're using a modern compiler GCC 9 or later
-
     config BOARD_FULL_OPTIMIZATION
         bool "Full optmization (O3)"
         default n
@@ -72,11 +62,6 @@ menu "Toolchain"
         default "px4fmu_common"
         help
             relative path to the ROMFS root directory
-
-    config BOARD_ADDITIONAL_INIT
-        string "Additional init file"
-        help
-            additional configurable init file to include in the ROMFS
 
     config BOARD_IO
         string "IO board name"
@@ -179,19 +164,8 @@ menu "Serial ports"
     config BOARD_SERIAL_WIFI
         string "WIFI tty port"
 
-    config BOARD_SERIAL_EXT2
-        string "EXT2 tty port"
-endmenu
-
-menu "File paths"
-
-    config BOARD_ROOT_PATH
-        string "PX4 Root file path"
-        default "/fs/microsd"
-
-    config BOARD_PARAM_FILE
-        string "Parameter file"
-        default "/fs/mtd_params"
+    config BOARD_SERIAL_PPB
+        string "PPB (Pixhawk Payload Bus) tty port"
 endmenu
 
 menu "drivers"
@@ -209,10 +183,3 @@ endmenu
 menu "examples"
 source "src/examples/Kconfig"
 endmenu
-
-menu "platforms"
-depends on PLATFORM_QURT || PLATFORM_POSIX || PLATFORM_NUTTX
-source "platforms/Kconfig"
-endmenu
-
-source "src/lib/*/Kconfig"

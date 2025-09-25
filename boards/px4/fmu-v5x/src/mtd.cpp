@@ -31,13 +31,10 @@
  *
  ****************************************************************************/
 
-#include <nuttx/config.h>
-#include <board_config.h>
-
 #include <nuttx/spi/spi.h>
 #include <px4_platform_common/px4_manifest.h>
 //                                                              KiB BS    nB
-static const px4_mft_device_t spi5 = {             // FM25V02A on FMUM native: 32K X 8, emulated as (1024 Blocks of 32)
+static const px4_mft_device_t spi5 = {             // FM25V02A on FMUM 32K 512 X 64
 	.bus_type = px4_mft_device_t::SPI,
 	.devid    = SPIDEV_FLASH(0)
 };
@@ -53,12 +50,18 @@ static const px4_mft_device_t i2c4 = {             // 24LC64T on IMU   8K 32 X 2
 
 static const px4_mtd_entry_t fmum_fram = {
 	.device = &spi5,
-	.npart = 1,
+	.npart = 2,
 	.partd = {
 		{
 			.type = MTD_PARAMETERS,
 			.path = "/fs/mtd_params",
-			.nblocks = (32768 / (1 << CONFIG_RAMTRON_EMULATE_SECTOR_SHIFT))
+			.nblocks = 32
+		},
+		{
+			.type = MTD_WAYPOINTS,
+			.path = "/fs/mtd_waypoints",
+			.nblocks = 32
+
 		}
 	},
 };
@@ -68,8 +71,8 @@ static const px4_mtd_entry_t base_eeprom = {
 	.npart = 2,
 	.partd = {
 		{
-			.type = MTD_MFT_VER,
-			.path = "/fs/mtd_mft_ver",
+			.type = MTD_MFT,
+			.path = "/fs/mtd_mft",
 			.nblocks = 248
 		},
 		{
@@ -83,17 +86,12 @@ static const px4_mtd_entry_t base_eeprom = {
 
 static const px4_mtd_entry_t imu_eeprom = {
 	.device = &i2c4,
-	.npart = 3,
+	.npart = 2,
 	.partd = {
 		{
 			.type = MTD_CALDATA,
 			.path = "/fs/mtd_caldata",
-			.nblocks = 240
-		},
-		{
-			.type = MTD_MFT_REV,
-			.path = "/fs/mtd_mft_rev",
-			.nblocks = 8
+			.nblocks = 248
 		},
 		{
 			.type = MTD_ID,
@@ -117,17 +115,9 @@ static const px4_mft_entry_s mtd_mft = {
 	.pmft = (void *) &board_mtd_config,
 };
 
-static const px4_mft_entry_s mft_mft = {
-	.type = MFT,
-	.pmft = (void *) system_query_manifest,
-};
-
 static const px4_mft_s mft = {
-	.nmft = 2,
-	.mfts = {
-		&mtd_mft,
-		&mft_mft,
-	}
+	.nmft = 1,
+	.mfts = &mtd_mft
 };
 
 const px4_mft_s *board_get_manifest(void)

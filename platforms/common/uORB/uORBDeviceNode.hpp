@@ -41,7 +41,6 @@
 #include <containers/IntrusiveSortedList.hpp>
 #include <containers/List.hpp>
 #include <px4_platform_common/atomic.h>
-#include <px4_platform_common/px4_config.h>
 
 namespace uORB
 {
@@ -62,7 +61,7 @@ class UnitTest;
 class uORB::DeviceNode : public cdev::CDev, public IntrusiveSortedListNode<uORB::DeviceNode *>
 {
 public:
-	DeviceNode(const struct orb_metadata *meta, const uint8_t instance, const char *path);
+	DeviceNode(const struct orb_metadata *meta, const uint8_t instance, const char *path, uint8_t queue_size = 1);
 	virtual ~DeviceNode();
 
 	// no copy, assignment, move, move assignment
@@ -123,24 +122,19 @@ public:
 
 	static int        unadvertise(orb_advert_t handle);
 
-#ifdef CONFIG_ORB_COMMUNICATOR
-	/**
-	 * processes a request for topic advertisement from remote
-	 * @param meta
-	 *   The uORB metadata (usually from the ORB_ID() macro) for the topic.
-	 * @return
-	 *   0 = success
-	 *   otherwise failure.
-	 */
+#ifdef ORB_COMMUNICATOR
 	static int16_t topic_advertised(const orb_metadata *meta);
+	//static int16_t topic_unadvertised(const orb_metadata *meta);
 
 	/**
 	 * processes a request for add subscription from remote
+	 * @param rateInHz
+	 *   Specifies the desired rate for the message.
 	 * @return
 	 *   0 = success
 	 *   otherwise failure.
 	 */
-	int16_t process_add_subscription();
+	int16_t process_add_subscription(int32_t rateInHz);
 
 	/**
 	 * processes a request to remove a subscription from remote.
@@ -151,7 +145,7 @@ public:
 	 * processed the received data message from remote.
 	 */
 	int16_t process_received_message(int32_t length, uint8_t *data);
-#endif /* CONFIG_ORB_COMMUNICATOR */
+#endif /* ORB_COMMUNICATOR */
 
 	/**
 	  * Add the subscriber to the node's list of subscriber.  If there is
@@ -180,13 +174,22 @@ public:
 	void mark_as_advertised() { _advertised = true; }
 
 	/**
+	 * Try to change the size of the queue. This can only be done as long as nobody published yet.
+	 * This is the case, for example when orb_subscribe was called before an orb_advertise.
+	 * The queue size can only be increased.
+	 * @param queue_size new size of the queue
+	 * @return PX4_OK if queue size successfully set
+	 */
+	int update_queue_size(unsigned int queue_size);
+
+	/**
 	 * Print statistics
 	 * @param max_topic_length max topic name length for printing
 	 * @return true if printed something, false otherwise
 	 */
 	bool print_statistics(int max_topic_length);
 
-	uint8_t get_queue_size() const { return _meta->o_queue; }
+	uint8_t get_queue_size() const { return _queue_size; }
 
 	int8_t subscriber_count() const { return _subscriber_count; }
 
@@ -225,7 +228,7 @@ public:
 	bool copy(void *dst, unsigned &generation)
 	{
 		if ((dst != nullptr) && (_data != nullptr)) {
-			if (_meta->o_queue == 1) {
+			if (_queue_size == 1) {
 				ATOMIC_ENTER;
 				memcpy(dst, _data, _meta->o_size);
 				generation = _generation.load();
@@ -244,12 +247,12 @@ public:
 				}
 
 				// Compatible with normal and overflow conditions
-				if (!is_in_range(current_generation - _meta->o_queue, generation, current_generation - 1)) {
+				if (!is_in_range(current_generation - _queue_size, generation, current_generation - 1)) {
 					// Reader is too far behind: some messages are lost
-					generation = current_generation - _meta->o_queue;
+					generation = current_generation - _queue_size;
 				}
 
-				memcpy(dst, _data + (_meta->o_size * (generation % _meta->o_queue)), _meta->o_size);
+				memcpy(dst, _data + (_meta->o_size * (generation % _queue_size)), _meta->o_size);
 				ATOMIC_LEAVE;
 
 				++generation;
@@ -286,7 +289,7 @@ private:
 
 	const uint8_t _instance; /**< orb multi instance identifier */
 	bool _advertised{false};  /**< has ever been advertised (not necessarily published data yet) */
-
+	uint8_t _queue_size; /**< maximum number of elements in the queue */
 	int8_t _subscriber_count{0};
 
 

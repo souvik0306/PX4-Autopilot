@@ -55,6 +55,7 @@
 
 #include <perf/perf_counter.h>
 #include <systemlib/err.h>
+#include <systemlib/conversions.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/clock.h>

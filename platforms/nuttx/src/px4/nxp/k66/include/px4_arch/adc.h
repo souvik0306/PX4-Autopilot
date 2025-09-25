@@ -33,3 +33,4 @@
 #pragma once
 
 #include "../../../kinetis/include/px4_arch/adc.h"
+

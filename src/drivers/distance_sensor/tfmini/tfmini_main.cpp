@@ -115,7 +115,7 @@ Serial bus driver for the Benewake TFmini LiDAR.
 
 Most boards are configured to enable/start the driver on a specified UART using the SENS_TFMINI_CFG parameter.
 
-Setup/usage information: https://docs.px4.io/main/en/sensor/tfmini.html
+Setup/usage information: https://docs.px4.io/master/en/sensor/tfmini.html
 
 ### Examples
 
@@ -132,6 +132,7 @@ $ tfmini stop
 	PRINT_MODULE_USAGE_PARAM_INT('R', 25, 0, 25, "Sensor rotation - downward facing by default", true);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("status","Driver status");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("stop","Stop driver");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("test","Test driver (basic functional tests)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("status","Print driver status");
 	return PX4_OK;
 }

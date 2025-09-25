@@ -2,7 +2,7 @@
 
 set -e
 
-## Bash script to setup PX4 development environment on Ubuntu LTS (24.04, 22.04).
+## Bash script to setup PX4 development environment on Ubuntu LTS (20.04, 18.04, 16.04).
 ## Can also be used in docker.
 ##
 ## Installs:
@@ -10,6 +10,8 @@ set -e
 ## - NuttX toolchain (omit with arg: --no-nuttx)
 ## - jMAVSim and Gazebo9 simulator (omit with arg: --no-sim-tools)
 ##
+## Not Installs:
+## - FastRTPS and FastCDR
 
 INSTALL_NUTTX="true"
 INSTALL_SIM="true"
@@ -25,20 +27,16 @@ do
 	if [[ $arg == "--no-sim-tools" ]]; then
 		INSTALL_SIM="false"
 	fi
+
 done
 
-echo "[ubuntu.sh] Starting..."
-echo "[ubuntu.sh] arch: $INSTALL_ARCH"
-
 # detect if running in docker
-if [ "$RUNS_IN_DOCKER" = "true" ]; then
-	echo "[ubuntu.sh] Running within docker, installing initial dependencies";
+if [ -f /.dockerenv ]; then
+	echo "Running within docker, installing initial dependencies";
 	apt-get --quiet -y update && DEBIAN_FRONTEND=noninteractive apt-get --quiet -y install \
 		ca-certificates \
 		gnupg \
-		gosu \
-		lsb-release \
-		software-properties-common \
+		lsb-core \
 		sudo \
 		wget \
 		;
@@ -50,38 +48,35 @@ DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 # check requirements.txt exists (script not run in source tree)
 REQUIREMENTS_FILE="requirements.txt"
 if [[ ! -f "${DIR}/${REQUIREMENTS_FILE}" ]]; then
-	echo "[ubuntu.sh] FAILED: ${REQUIREMENTS_FILE} needed in same directory as ubuntu.sh (${DIR})."
+	echo "FAILED: ${REQUIREMENTS_FILE} needed in same directory as ubuntu.sh (${DIR})."
 	return 1
 fi
 
-# Linux Mint compatibility: use upstream Ubuntu values
-if [ -r /etc/upstream-release/lsb-release ]; then
-    . /etc/upstream-release/lsb-release
-    UBUNTU_CODENAME="${DISTRIB_CODENAME:-${UBUNTU_CODENAME:-}}"
-    UBUNTU_RELEASE="${DISTRIB_RELEASE:-${UBUNTU_RELEASE:-}}"
-
-    lsb_release() {
-        if [ "$1" = "-cs" ]; then
-            printf '%s' "$UBUNTU_CODENAME"
-        elif [ "$1" = "-rs" ]; then
-            printf '%s' "$UBUNTU_RELEASE"
-        else
-            command lsb_release "$@"
-        fi
-    }
-fi
 
 # check ubuntu version
 # otherwise warn and point to docker?
 UBUNTU_RELEASE="`lsb_release -rs`"
-echo "[ubuntu.sh] Ubuntu ${UBUNTU_RELEASE}"
-echo "[ubuntu.sh] Installing PX4 general dependencies"
+
+if [[ "${UBUNTU_RELEASE}" == "14.04" ]]; then
+	echo "Ubuntu 14.04 is no longer supported"
+	exit 1
+elif [[ "${UBUNTU_RELEASE}" == "16.04" ]]; then
+	echo "Ubuntu 16.04 is no longer supported"
+	exit 1
+elif [[ "${UBUNTU_RELEASE}" == "18.04" ]]; then
+	echo "Ubuntu 18.04"
+elif [[ "${UBUNTU_RELEASE}" == "20.04" ]]; then
+	echo "Ubuntu 20.04"
+fi
+
+
+echo
+echo "Installing PX4 general dependencies"
 
 sudo apt-get update -y --quiet
 sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
 	astyle \
 	build-essential \
-	ccache \
 	cmake \
 	cppcheck \
 	file \
@@ -90,7 +85,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends i
 	gdb \
 	git \
 	lcov \
-	libssl-dev \
 	libxml2-dev \
 	libxml2-utils \
 	make \
@@ -108,56 +102,43 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends i
 
 # Python3 dependencies
 echo
-echo "[ubuntu.sh] Installing PX4 Python3 dependencies"
-PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
-REQUIRED_VERSION="3.11"
-if [[ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" == "$REQUIRED_VERSION" ]]; then
-	python3 -m pip install --break-system-packages -r ${DIR}/requirements.txt
+echo "Installing PX4 Python3 dependencies"
+if [ -n "$VIRTUAL_ENV" ]; then
+	# virtual envrionments don't allow --user option
+	python -m pip install -r ${DIR}/requirements.txt
 else
-	if [ -n "$VIRTUAL_ENV" ]; then
-		# virtual environments don't allow --user option
-		python -m pip install -r ${DIR}/requirements.txt
-	else
-		python3 -m pip install --user -r ${DIR}/requirements.txt
-	fi
+	# older versions of Ubuntu require --user option
+	python3 -m pip install --user -r ${DIR}/requirements.txt
 fi
 
 # NuttX toolchain (arm-none-eabi-gcc)
 if [[ $INSTALL_NUTTX == "true" ]]; then
 
 	echo
-	echo "[ubuntu.sh] NuttX Installing Dependencies ($INSTALL_ARCH)"
-	sudo apt-get update -y --quiet
+	echo "Installing NuttX dependencies"
+
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
 		automake \
 		binutils-dev \
 		bison \
 		build-essential \
-		curl \
-		clang \
-		clang-tidy \
-		clang-format \
 		flex \
+		g++-multilib \
+		gcc-multilib \
 		gdb-multiarch \
 		genromfs \
 		gettext \
 		gperf \
-		kconfig-frontends \
 		libelf-dev \
 		libexpat-dev \
 		libgmp-dev \
 		libisl-dev \
 		libmpc-dev \
 		libmpfr-dev \
-		libncurses-dev \
-		libncurses6 \
-		libncursesw6 \
-		libnewlib-arm-none-eabi \
-		libstdc++-arm-none-eabi-newlib \
+		libncurses5 \
+		libncurses5-dev \
+		libncursesw5-dev \
 		libtool \
-		libunwind-dev \
-		lldb \
-		lld \
 		pkg-config \
 		screen \
 		texinfo \
@@ -165,32 +146,44 @@ if [[ $INSTALL_NUTTX == "true" ]]; then
 		util-linux \
 		vim-common \
 		;
-
-	if [[ "${INSTALL_ARCH}" == "x86_64" ]]; then
+	if [[ "${UBUNTU_RELEASE}" == "20.04" ]]; then
 		sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
-			g++-multilib \
-			gcc-arm-none-eabi \
-			gcc-multilib \
-			esptool \
-			;
-
-		echo
-		echo "Fetching Xtensa compilers"
-		wget -q -P $DIR https://github.com/espressif/crosstool-NG/releases/download/esp-13.2.0_20240530/xtensa-esp-elf-13.2.0_20240530-x86_64-linux-gnu.tar.xz
-		sudo tar -xf $DIR/xtensa-esp-elf-13.2.0_20240530-x86_64-linux-gnu.tar.xz -C /opt
-		echo 'export PATH=$PATH:/opt/xtensa-esp-elf/bin/' >> /home/$USER/.bashrc
+		kconfig-frontends \
+		;
 	fi
 
-	if [[ "${INSTALL_ARCH}" == "aarch64" ]]; then
-		sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
-			g++-aarch64-linux-gnu \
-			g++-arm-linux-gnueabihf \
-			;
-	fi
 
 	if [ -n "$USER" ]; then
 		# add user to dialout group (serial port access)
-		sudo usermod -aG dialout $USER
+		sudo usermod -a -G dialout $USER
+	fi
+
+	# arm-none-eabi-gcc
+	NUTTX_GCC_VERSION="9-2020-q2-update"
+	NUTTX_GCC_VERSION_SHORT="9-2020q2"
+
+	source $HOME/.profile # load changed path for the case the script is reran before relogin
+	if [ $(which arm-none-eabi-gcc) ]; then
+		GCC_VER_STR=$(arm-none-eabi-gcc --version)
+		GCC_FOUND_VER=$(echo $GCC_VER_STR | grep -c "${NUTTX_GCC_VERSION}")
+	fi
+
+	if [[ "$GCC_FOUND_VER" == "1" ]]; then
+		echo "arm-none-eabi-gcc-${NUTTX_GCC_VERSION} found, skipping installation"
+
+	else
+		echo "Installing arm-none-eabi-gcc-${NUTTX_GCC_VERSION}";
+		wget -O /tmp/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-linux.tar.bz2 https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/${NUTTX_GCC_VERSION_SHORT}/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-${INSTALL_ARCH}-linux.tar.bz2 && \
+			sudo tar -jxf /tmp/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}-linux.tar.bz2 -C /opt/;
+
+		# add arm-none-eabi-gcc to user's PATH
+		exportline="export PATH=/opt/gcc-arm-none-eabi-${NUTTX_GCC_VERSION}/bin:\$PATH"
+
+		if grep -Fxq "$exportline" $HOME/.profile; then
+			echo "${NUTTX_GCC_VERSION} path already set.";
+		else
+			echo $exportline >> $HOME/.profile;
+		fi
 	fi
 fi
 
@@ -198,55 +191,49 @@ fi
 if [[ $INSTALL_SIM == "true" ]]; then
 
 	echo
-	echo "[ubuntu.sh] Installing PX4 simulation dependencies"
+	echo "Installing PX4 simulation dependencies"
 
 	# General simulation dependencies
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
 		bc \
 		;
 
-	# Gazebo / Gazebo classic installation
-	if [[ "${UBUNTU_RELEASE}" == "18.04" || "${UBUNTU_RELEASE}" == "20.04" ]]; then
-		sudo sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list'
-		wget http://packages.osrfoundation.org/gazebo.key -O - | sudo apt-key add -
-		# Update list, since new gazebo-stable.list has been added
-		sudo apt-get update -y --quiet
-
-		# Install Gazebo classic
-		if [[ "${UBUNTU_RELEASE}" == "18.04" ]]; then
-			gazebo_classic_version=9
-			gazebo_packages="gazebo$gazebo_classic_version libgazebo$gazebo_classic_version-dev"
-		else
-			# default and Ubuntu 20.04
-			gazebo_classic_version=11
-			gazebo_packages="gazebo$gazebo_classic_version libgazebo$gazebo_classic_version-dev"
-		fi
+	if [[ "${UBUNTU_RELEASE}" == "18.04" ]]; then
+		java_version=11
+		gazebo_version=9
+	elif [[ "${UBUNTU_RELEASE}" == "20.04" ]]; then
+		java_version=13
+		gazebo_version=11
 	else
-		# Expects Ubuntu 22.04 > by default
-		echo "[ubuntu.sh] Gazebo (Harmonic) will be installed"
-		echo "[ubuntu.sh] Earlier versions will be removed"
-		# Add Gazebo binary repository
-		sudo wget https://packages.osrfoundation.org/gazebo.gpg -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
-		echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
-		sudo apt-get update -y --quiet
-
-		# Install Gazebo
-		gazebo_packages="gz-harmonic libunwind-dev"
-
-		if [[ "${UBUNTU_RELEASE}" == "24.04" ]]; then
-			gazebo_packages="$gazebo_packages cppzmq-dev"
-		fi
+		java_version=14
+		gazebo_version=11
 	fi
+	# Java (jmavsim or fastrtps)
+	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
+		ant \
+		openjdk-$java_version-jre \
+		openjdk-$java_version-jdk \
+		libvecmath-java \
+		;
 
+	# Set Java 11 as default
+	sudo update-alternatives --set java $(update-alternatives --list java | grep "java-$java_version")
+
+	# Gazebo
+	sudo sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list'
+	wget http://packages.osrfoundation.org/gazebo.key -O - | sudo apt-key add -
+	# Update list, since new gazebo-stable.list has been added
+	sudo apt-get update -y --quiet
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y --quiet --no-install-recommends install \
 		dmidecode \
-		$gazebo_packages \
+		gazebo$gazebo_version \
 		gstreamer1.0-plugins-bad \
 		gstreamer1.0-plugins-base \
 		gstreamer1.0-plugins-good \
 		gstreamer1.0-plugins-ugly \
 		gstreamer1.0-libav \
 		libeigen3-dev \
+		libgazebo$gazebo_version-dev \
 		libgstreamer-plugins-base1.0-dev \
 		libimage-exiftool-perl \
 		libopencv-dev \
@@ -259,5 +246,9 @@ if [[ $INSTALL_SIM == "true" ]]; then
 		# fix VMWare 3D graphics acceleration for gazebo
 		echo "export SVGA_VGPU10=0" >> ~/.profile
 	fi
+fi
 
+if [[ $INSTALL_NUTTX == "true" ]]; then
+	echo
+	echo "Relogin or reboot computer before attempting to build NuttX targets"
 fi

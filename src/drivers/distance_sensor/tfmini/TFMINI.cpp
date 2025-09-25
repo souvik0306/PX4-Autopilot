@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2017-2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2017-2019, 2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,7 +33,6 @@
 
 #include "TFMINI.hpp"
 
-#include <lib/parameters/param.h>
 #include <lib/drivers/device/Device.hpp>
 #include <fcntl.h>
 
@@ -73,8 +72,7 @@ TFMINI::~TFMINI()
 int
 TFMINI::init()
 {
-	int32_t hw_model = 1;
-	param_get(param_find("SENS_TFMINI_HW"), &hw_model);
+	int32_t hw_model = 1; // only one model so far...
 
 	switch (hw_model) {
 	case 1: // TFMINI (12m, 100 Hz)
@@ -85,19 +83,8 @@ TFMINI::init()
 		// So we set 0.4 as valid minimum.
 		_px4_rangefinder.set_min_distance(0.4f);
 		_px4_rangefinder.set_max_distance(12.0f);
-		_px4_rangefinder.set_fov(math::radians(2.3f));
-		break;
+		_px4_rangefinder.set_fov(math::radians(1.15f));
 
-	case 2: // ISTRA24 (50m, 100 Hz)
-		_px4_rangefinder.set_min_distance(0.3f);
-		_px4_rangefinder.set_max_distance(50.0f);
-		_px4_rangefinder.set_fov(math::radians(20));
-		break;
-
-	case 3: // ISTRA24 (100m, 100 Hz)
-		_px4_rangefinder.set_min_distance(0.3f);
-		_px4_rangefinder.set_max_distance(100.0f);
-		_px4_rangefinder.set_fov(math::radians(20));
 		break;
 
 	default:

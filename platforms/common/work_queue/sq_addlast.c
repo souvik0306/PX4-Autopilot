@@ -69,3 +69,4 @@ void sq_addlast(sq_entry_t *node, sq_queue_t *queue)
 		queue->tail        = node;
 	}
 }
+
