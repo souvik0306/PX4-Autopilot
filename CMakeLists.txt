@@ -425,8 +425,20 @@ if(EXISTS "${PX4_BOARD_DIR}/CMakeLists.txt")
 endif()
 
 foreach(module ${config_module_list})
-	add_subdirectory(src/${module})
+        add_subdirectory(src/${module})
 endforeach()
+
+if (EXISTS "${PX4_SOURCE_DIR}/src/modules/imu_ai_bridge/CMakeLists.txt")
+        if (NOT TARGET modules__imu_ai_bridge)
+                add_subdirectory(src/modules/imu_ai_bridge)
+        endif()
+endif()
+
+if (EXISTS "${PX4_SOURCE_DIR}/src/modules/ekf2/CMakeLists.txt")
+        if (NOT TARGET modules__ekf2)
+                add_subdirectory(src/modules/ekf2)
+        endif()
+endif()
 
 # add events lib after modules and libs as it needs to know all source files (PX4_SRC_FILES)
 add_subdirectory(src/lib/events EXCLUDE_FROM_ALL)
