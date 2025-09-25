@@ -52,6 +52,45 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <cstring>
+
+namespace
+{
+	// Legacy packet layout (dt fields in microseconds, no delta_angle_clipping byte)
+	struct __attribute__((packed)) AIBridgePacketV0 {
+		uint64_t timestamp;
+		uint64_t timestamp_sample;
+		uint32_t accel_device_id;
+		uint32_t gyro_device_id;
+		float delta_angle[3];
+		float delta_velocity[3];
+		uint16_t delta_angle_dt;    // microseconds
+		uint16_t delta_velocity_dt; // microseconds
+		uint8_t delta_velocity_clipping;
+		uint8_t accel_calibration_count;
+		uint8_t gyro_calibration_count;
+	};
+
+	static_assert(sizeof(AIBridgePacketV0) == 55, "Unexpected legacy AI IMU packet size");
+
+	// Current python helper layout (dt fields in seconds, explicit delta_angle_clipping byte)
+	struct __attribute__((packed)) AIBridgePacketV1 {
+		uint64_t timestamp;
+		uint64_t timestamp_sample;
+		uint32_t accel_device_id;
+		uint32_t gyro_device_id;
+		float delta_angle[3];
+		float delta_velocity[3];
+		float delta_angle_dt;      // seconds
+		float delta_velocity_dt;   // seconds
+		uint8_t delta_angle_clipping;
+		uint8_t delta_velocity_clipping;
+		uint8_t accel_calibration_count;
+		uint8_t gyro_calibration_count;
+	};
+
+	static_assert(sizeof(AIBridgePacketV1) == 60, "Unexpected AI IMU helper packet size");
+}
 
 ImuAIBridge::ImuAIBridge() :
 	ModuleParams(nullptr),
@@ -126,12 +165,12 @@ void ImuAIBridge::receive_ai_imu_data()
 	}
 
 	struct sockaddr_in sender_addr {};
+	uint8_t recv_buffer[sizeof(vehicle_imu_ai_s)]{};
 
 	while (true) {
 		socklen_t sender_len = sizeof(sender_addr);
-		vehicle_imu_ai_s ai_imu_msg{};
-		ssize_t bytes_received = recvfrom(_socket_fd, &ai_imu_msg, sizeof(ai_imu_msg), 0,
-				      (struct sockaddr *)&sender_addr, &sender_len);
+		ssize_t bytes_received = recvfrom(_socket_fd, recv_buffer, sizeof(recv_buffer), 0,
+					      (struct sockaddr *)&sender_addr, &sender_len);
 
 		if (bytes_received < 0) {
 #if EWOULDBLOCK != EAGAIN
@@ -145,59 +184,105 @@ void ImuAIBridge::receive_ai_imu_data()
 			break;
 		}
 
-		if (bytes_received != sizeof(ai_imu_msg)) {
-			PX4_WARN("Received %zd bytes, expected %zu bytes", bytes_received, sizeof(ai_imu_msg));
+		vehicle_imu_ai_s ai_imu_msg{};
+		bool parsed = false;
+
+		if (bytes_received == (ssize_t)sizeof(vehicle_imu_ai_s)) {
+			memcpy(&ai_imu_msg, recv_buffer, sizeof(vehicle_imu_ai_s));
+			parsed = true;
+
+		} else if (bytes_received == (ssize_t)sizeof(AIBridgePacketV1)) {
+			AIBridgePacketV1 packet{};
+			memcpy(&packet, recv_buffer, sizeof(packet));
+
+			ai_imu_msg.timestamp = packet.timestamp;
+			ai_imu_msg.timestamp_sample = packet.timestamp_sample;
+			ai_imu_msg.accel_device_id = packet.accel_device_id;
+			ai_imu_msg.gyro_device_id = packet.gyro_device_id;
+			memcpy(ai_imu_msg.delta_angle, packet.delta_angle, sizeof(packet.delta_angle));
+			memcpy(ai_imu_msg.delta_velocity, packet.delta_velocity, sizeof(packet.delta_velocity));
+			ai_imu_msg.delta_angle_dt = packet.delta_angle_dt;
+			ai_imu_msg.delta_velocity_dt = packet.delta_velocity_dt;
+			ai_imu_msg.delta_velocity_clipping = packet.delta_velocity_clipping;
+			ai_imu_msg.accel_calibration_count = packet.accel_calibration_count;
+			ai_imu_msg.gyro_calibration_count = packet.gyro_calibration_count;
+			parsed = true;
+
+		} else if (bytes_received == (ssize_t)sizeof(AIBridgePacketV0)) {
+			AIBridgePacketV0 packet{};
+			memcpy(&packet, recv_buffer, sizeof(packet));
+
+			ai_imu_msg.timestamp = packet.timestamp;
+			ai_imu_msg.timestamp_sample = packet.timestamp_sample;
+			ai_imu_msg.accel_device_id = packet.accel_device_id;
+			ai_imu_msg.gyro_device_id = packet.gyro_device_id;
+			memcpy(ai_imu_msg.delta_angle, packet.delta_angle, sizeof(packet.delta_angle));
+			memcpy(ai_imu_msg.delta_velocity, packet.delta_velocity, sizeof(packet.delta_velocity));
+			ai_imu_msg.delta_angle_dt = 1e-6f * packet.delta_angle_dt;
+			ai_imu_msg.delta_velocity_dt = 1e-6f * packet.delta_velocity_dt;
+			ai_imu_msg.delta_velocity_clipping = packet.delta_velocity_clipping;
+			ai_imu_msg.accel_calibration_count = packet.accel_calibration_count;
+			ai_imu_msg.gyro_calibration_count = packet.gyro_calibration_count;
+			parsed = true;
+		}
+
+		if (!parsed) {
+			PX4_WARN("Received %zd bytes, expected %zu, %zu or %zu bytes",
+				  bytes_received,
+				  sizeof(vehicle_imu_ai_s),
+				  sizeof(AIBridgePacketV1),
+				  sizeof(AIBridgePacketV0));
 			continue;
-			}
+		}
 
 		const hrt_abstime now = hrt_absolute_time();
 		ai_imu_msg.timestamp = now;
 
 		if ((ai_imu_msg.timestamp_sample == 0) || (ai_imu_msg.timestamp_sample > now)) {
 			ai_imu_msg.timestamp_sample = now;
-			}
+		}
 
 		bool data_valid = true;
 
 		// Basic sanity checks
-			for (int i = 0; i < 3; i++) {
-				data_valid &= PX4_ISFINITE(ai_imu_msg.delta_angle[i]);
-				data_valid &= PX4_ISFINITE(ai_imu_msg.delta_velocity[i]);
+		for (int i = 0; i < 3; i++) {
+			data_valid &= PX4_ISFINITE(ai_imu_msg.delta_angle[i]);
+			data_valid &= PX4_ISFINITE(ai_imu_msg.delta_velocity[i]);
 
-				if (!data_valid) {
-			break;
+			if (!data_valid) {
+				break;
 			}
 
-				if ((fabsf(ai_imu_msg.delta_angle[i]) > 2.f * M_PI_F)
-					|| (fabsf(ai_imu_msg.delta_velocity[i]) > 100.f)) {
-					data_valid = false;
-			break;
+			if ((fabsf(ai_imu_msg.delta_angle[i]) > 2.f * M_PI_F)
+			    || (fabsf(ai_imu_msg.delta_velocity[i]) > 100.f)) {
+				data_valid = false;
+				break;
 			}
-			}
+		}
 
-			if (data_valid) {
-				data_valid &= PX4_ISFINITE(ai_imu_msg.delta_angle_dt)
+		if (data_valid) {
+			data_valid &= PX4_ISFINITE(ai_imu_msg.delta_angle_dt)
 					&& PX4_ISFINITE(ai_imu_msg.delta_velocity_dt)
 					&& (ai_imu_msg.delta_angle_dt > 5e-4f) && (ai_imu_msg.delta_angle_dt < 5e-2f)
 					&& (ai_imu_msg.delta_velocity_dt > 5e-4f) && (ai_imu_msg.delta_velocity_dt < 5e-2f);
-}
+		}
 
-				if (!data_valid) {
-				PX4_WARN("Invalid AI IMU data received, ignoring");
+		if (!data_valid) {
+			PX4_WARN("Invalid AI IMU data received, ignoring");
 			continue;
-			}
+		}
 
 		_vehicle_imu_ai_pub.publish(ai_imu_msg);
 		_msg_count++;
 
 		if ((_msg_count % 200) == 0) {
 			PX4_DEBUG("AI IMU: count=%u, dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
-				_msg_count,
-				(double)(ai_imu_msg.delta_velocity_dt * 1e3f),
-				(double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],
-				(double)ai_imu_msg.delta_angle[0], (double)ai_imu_msg.delta_angle[1], (double)ai_imu_msg.delta_angle[2]);
-}
-}
+				  _msg_count,
+				  (double)(ai_imu_msg.delta_velocity_dt * 1e3f),
+				  (double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],
+				  (double)ai_imu_msg.delta_angle[0], (double)ai_imu_msg.delta_angle[1], (double)ai_imu_msg.delta_angle[2]);
+		}
+	}
 }
 
 int ImuAIBridge::task_spawn(int argc, char *argv[])
