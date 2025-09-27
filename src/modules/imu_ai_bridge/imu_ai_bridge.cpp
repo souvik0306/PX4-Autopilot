@@ -33,220 +33,175 @@
 
 /**
  * @file imu_ai_bridge.cpp
- * @author Your Name
  *
- * IMU AI Bridge - Receives AI-processed IMU data and publishes as vehicle_imu_ai
+ * Simple bridge that receives AI-processed IMU samples over UDP and
+ * republishes them on the vehicle_imu_ai uORB topic.
  */
 
-#include "imu_ai_bridge.hpp"
-
-#include <px4_platform_common/getopt.h>
+#include <px4_platform_common/module.h>
 #include <px4_platform_common/log.h>
+#include <px4_platform_common/defines.h>
 #include <px4_platform_common/posix.h>
+#include <px4_platform_common/time.h>
+
+#include <drivers/drv_hrt.h>
 
 #include <uORB/topics/vehicle_imu_ai.h>
-#include <mathlib/mathlib.h>
 
-#include <arpa/inet.h>
-#include <errno.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-ImuAIBridge::ImuAIBridge() :
-	ModuleParams(nullptr),
-	ScheduledWorkItem("imu_ai_bridge", px4::wq_configurations::hp_default)
+#include <array>
+#include <cstring>
+
+using namespace time_literals;
+
+class ImuAIBridge final : public ModuleBase<ImuAIBridge>
 {
-}
+public:
+        int task_spawn(int argc, char *argv[]) override;
+        int custom_command(int argc, char *argv[]) override { return print_usage("unknown command"); }
+        int print_usage(const char *reason = nullptr) override;
 
-ImuAIBridge::~ImuAIBridge()
-{
-	if (_socket_fd >= 0) {
-		close(_socket_fd);
-	}
-}
+        int run();
 
-bool ImuAIBridge::init()
-{
-	// Create UDP socket
-	_socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+private:
+        static constexpr uint16_t kListenPort{14560};
 
-	if (_socket_fd < 0) {
-		PX4_ERR("socket creation failed: %s", strerror(errno));
-		return false;
-	}
-
-	// Set socket to non-blocking
-	int flags = fcntl(_socket_fd, F_GETFL, 0);
-	fcntl(_socket_fd, F_SETFL, flags | O_NONBLOCK);
-
-	// Bind socket
-	struct sockaddr_in addr {};
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(_param_imu_ai_port.get());
-
-	if (bind(_socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		PX4_ERR("bind failed on port %d: %s", _param_imu_ai_port.get(), strerror(errno));
-		close(_socket_fd);
-		_socket_fd = -1;
-		return false;
-	}
-
-	PX4_INFO("IMU AI Bridge listening on UDP port %d", _param_imu_ai_port.get());
-
-	// Start the work queue
-	ScheduleOnInterval(1000); // Check for data every 1ms
-
-	return true;
-}
-
-void ImuAIBridge::Run()
-{
-	if (should_exit()) {
-		ScheduleClear();
-		return;
-	}
-
-	// Check for parameter updates
-	if (_parameter_update_sub.updated()) {
-		parameter_update_s param_update;
-		_parameter_update_sub.copy(&param_update);
-		updateParams();
-	}
-
-	// Read AI IMU data from UDP socket
-	receive_ai_imu_data();
-}
-
-void ImuAIBridge::receive_ai_imu_data()
-{
-	if (_socket_fd < 0) {
-		return;
-	}
-
-	vehicle_imu_ai_s ai_imu_msg{};
-	struct sockaddr_in sender_addr {};
-	socklen_t sender_len = sizeof(sender_addr);
-
-	ssize_t bytes_received = recvfrom(_socket_fd, &ai_imu_msg, sizeof(ai_imu_msg), 0,
-					  (struct sockaddr *)&sender_addr, &sender_len);
-
-	if (bytes_received == sizeof(ai_imu_msg)) {
-		// Set current timestamp
-		ai_imu_msg.timestamp = hrt_absolute_time();
-
-		// Validate data ranges (basic sanity checks)
-		bool data_valid = true;
-
-		// Check delta angles are reasonable (< 2π rad)
-		for (int i = 0; i < 3; i++) {
-			if (fabsf(ai_imu_msg.delta_angle[i]) > 2.0f * M_PI_F) {
-				data_valid = false;
-				break;
-			}
-		}
-
-		// Check delta velocities are reasonable (< 100 m/s)
-		if (data_valid) {
-			for (int i = 0; i < 3; i++) {
-				if (fabsf(ai_imu_msg.delta_velocity[i]) > 100.0f) {
-					data_valid = false;
-					break;
-				}
-			}
-		}
-
-		// Check integration times are reasonable (1-10ms)
-		if (data_valid) {
-				if (ai_imu_msg.delta_angle_dt < 0.0005f || ai_imu_msg.delta_angle_dt > 0.02f ||
-					ai_imu_msg.delta_velocity_dt < 0.0005f || ai_imu_msg.delta_velocity_dt > 0.02f) {
-						data_valid = false;
-				}
-		}
-
-		if (data_valid) {
-			// Publish the AI IMU data
-			_vehicle_imu_ai_pub.publish(ai_imu_msg);
-
-			_msg_count++;
-
-			// Log every 200 messages (about once per second at 200Hz)
-			if (_msg_count % 200 == 0) {
-				PX4_DEBUG("AI IMU: count=%u, dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
-						  _msg_count, (double)(ai_imu_msg.delta_velocity_dt * 1e3f),
-						  (double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],
-						  (double)ai_imu_msg.delta_angle[0], (double)ai_imu_msg.delta_angle[1], (double)ai_imu_msg.delta_angle[2]);
-			}
-		} else {
-			PX4_WARN("Invalid AI IMU data received, ignoring");
-		}
-
-	} else if (bytes_received > 0) {
-		PX4_WARN("Received %zd bytes, expected %zu bytes", bytes_received, sizeof(ai_imu_msg));
-	}
-	// bytes_received == -1 is normal for non-blocking socket when no data available
-}
+        struct PX4_PACKED VehicleImuAiWire
+        {
+                uint64_t timestamp;
+                uint64_t timestamp_sample;
+                uint32_t accel_device_id;
+                uint32_t gyro_device_id;
+                float delta_angle[3];
+                float delta_velocity[3];
+                uint16_t delta_angle_dt;
+                uint16_t delta_velocity_dt;
+                uint8_t delta_velocity_clipping;
+                uint8_t accel_calibration_count;
+                uint8_t gyro_calibration_count;
+        };
+};
 
 int ImuAIBridge::task_spawn(int argc, char *argv[])
 {
-	ImuAIBridge *instance = new ImuAIBridge();
+        ImuAIBridge *instance = new ImuAIBridge();
 
-	if (instance) {
-		_object.store(instance);
-		_task_id = task_id_is_work_queue;
+        if (!instance) {
+                PX4_ERR("alloc failed");
+                return PX4_ERROR;
+        }
 
-		if (instance->init()) {
-			return PX4_OK;
-		}
+        _object.store(instance);
+        _task_id = task_id_is_work_queue;
 
-	} else {
-		PX4_ERR("alloc failed");
-	}
-
-	delete instance;
-	_object.store(nullptr);
-	_task_id = -1;
-
-	return PX4_ERROR;
+        return instance->run();
 }
 
-int ImuAIBridge::print_status()
+int ImuAIBridge::run()
 {
-	PX4_INFO("IMU AI Bridge running");
-	PX4_INFO("UDP port: %d", _param_imu_ai_port.get());
-	PX4_INFO("Messages received: %u", _msg_count);
+        vehicle_imu_ai_s msg{};
+        std::array<uint8_t, sizeof(VehicleImuAiWire)> rx_buffer{};
 
-	return 0;
-}
+        const int sock = ::socket(AF_INET, SOCK_DGRAM, 0);
 
-int ImuAIBridge::custom_command(int argc, char *argv[])
-{
-	return print_usage("unknown command");
+        if (sock < 0) {
+                PX4_ERR("socket");
+                return PX4_ERROR;
+        }
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(kListenPort);
+        addr.sin_addr.s_addr = INADDR_ANY;
+
+        if (::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+                PX4_ERR("bind");
+                ::close(sock);
+                return PX4_ERROR;
+        }
+
+        PX4_INFO("imu_ai_bridge listening on UDP port %u", static_cast<unsigned>(kListenPort));
+
+        orb_advert_t pub = nullptr;
+
+        hrt_abstime last_size_warn_us = 0;
+
+        while (!should_exit()) {
+                const ssize_t bytes = ::recvfrom(sock, rx_buffer.data(), rx_buffer.size(), MSG_TRUNC, nullptr, nullptr);
+
+                if (bytes < 0) {
+                        // socket error, sleep briefly to avoid tight loop
+                        px4_usleep(5_ms);
+                        continue;
+                }
+
+                if (bytes != static_cast<ssize_t>(rx_buffer.size())) {
+                        if (hrt_elapsed_time(&last_size_warn_us) > 1_s) {
+                                PX4_WARN("discarded imu_ai packet with size %zd (expected %zu)", bytes,
+                                         rx_buffer.size());
+                                last_size_warn_us = hrt_absolute_time();
+                        }
+
+                        continue;
+                }
+
+                VehicleImuAiWire wire{};
+                std::memcpy(&wire, rx_buffer.data(), sizeof(wire));
+
+                msg = {};
+                msg.timestamp = hrt_absolute_time();
+                msg.timestamp_sample = wire.timestamp_sample;
+                msg.accel_device_id = wire.accel_device_id;
+                msg.gyro_device_id = wire.gyro_device_id;
+                std::memcpy(msg.delta_angle, wire.delta_angle, sizeof(msg.delta_angle));
+                std::memcpy(msg.delta_velocity, wire.delta_velocity, sizeof(msg.delta_velocity));
+                msg.delta_angle_dt = wire.delta_angle_dt;
+                msg.delta_velocity_dt = wire.delta_velocity_dt;
+                msg.delta_velocity_clipping = wire.delta_velocity_clipping;
+                msg.accel_calibration_count = wire.accel_calibration_count;
+                msg.gyro_calibration_count = wire.gyro_calibration_count;
+
+                if (!pub) {
+                        pub = orb_advertise(ORB_ID(vehicle_imu_ai), &msg);
+
+                } else {
+                        orb_publish(ORB_ID(vehicle_imu_ai), pub, &msg);
+                }
+        }
+
+        if (pub) {
+                orb_unadvertise(pub);
+        }
+
+        ::close(sock);
+        return PX4_OK;
 }
 
 int ImuAIBridge::print_usage(const char *reason)
 {
-	if (reason) {
-		PX4_WARN("%s\n", reason);
-	}
+        if (reason) {
+                PX4_WARN("%s", reason);
+        }
 
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
+        PRINT_MODULE_DESCRIPTION(
+                R"DESCR_STR(
 ### Description
-IMU AI Bridge receives AI-processed IMU data over UDP and publishes it as vehicle_imu_ai topic.
 
-The AI model should send binary packets matching the vehicle_imu_ai message structure.
+Listens for AI-processed IMU samples on UDP port 14560 and republishes
+then on the vehicle_imu_ai topic.
+
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME("imu_ai_bridge", "driver");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+        PRINT_MODULE_USAGE_NAME("imu_ai_bridge", "system");
+        PRINT_MODULE_USAGE_COMMAND("start");
 
-	return 0;
+        return PX4_OK;
 }
 
 extern "C" __EXPORT int imu_ai_bridge_main(int argc, char *argv[])
 {
-	return ImuAIBridge::main(argc, argv);
+        return ImuAIBridge::main(argc, argv);
 }

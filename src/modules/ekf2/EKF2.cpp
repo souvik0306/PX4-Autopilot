@@ -270,6 +270,7 @@ void EKF2::Run()
 	if (should_exit()) {
 		_sensor_combined_sub.unregisterCallback();
 		_vehicle_imu_sub.unregisterCallback();
+		_vehicle_imu_ai_sub.unregisterCallback();
 
 		return;
 	}
@@ -323,11 +324,37 @@ void EKF2::Run()
 				}
 			}
 		}
-	}
+
+		if (_multi_mode) {
+			const int desired_source = (_param_ekf2_imu_src.get() == 1) ? 1 : 0;
+
+			if (_callback_registered && (desired_source != _registered_imu_source)) {
+				if (_registered_imu_source == 1) {
+					_vehicle_imu_ai_sub.unregisterCallback();
+
+				} else if (_registered_imu_source == 0) {
+					_vehicle_imu_sub.unregisterCallback();
+				}
+
+				_callback_registered = false;
+				_registered_imu_source = -1;
+			}
+		}
 
 	if (!_callback_registered) {
 		if (_multi_mode) {
-			_callback_registered = _vehicle_imu_sub.registerCallback();
+			const int desired_source = (_param_ekf2_imu_src.get() == 1) ? 1 : 0;
+
+			if (desired_source == 1) {
+				_callback_registered = _vehicle_imu_ai_sub.registerCallback();
+
+			} else {
+				_callback_registered = _vehicle_imu_sub.registerCallback();
+			}
+
+			if (_callback_registered) {
+				_registered_imu_source = desired_source;
+			}
 
 		} else {
 			_callback_registered = _sensor_combined_sub.registerCallback();
