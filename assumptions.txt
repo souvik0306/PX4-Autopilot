@@ -1,0 +1,272 @@
+Perfect, let’s lay out **Option 1** in a clear end-to-end plan. I’ll keep it structured so you can follow all moving parts.
+
+---
+
+# 🔹 Goal
+
+Make EKF2 choose between **raw IMU (`vehicle_imu`)** and **denoised IMU (`vehicle_imu_ai`)**, controlled by a parameter.
+
+* Your AI model runs in ROS/MAVROS, subscribes to `/mavros/imu/data`.
+* Your AI model publishes denoised IMU packets back to PX4.
+* PX4 bridge receives them and republishes on the uORB topic `vehicle_imu_ai`.
+* EKF2 can subscribe to either `vehicle_imu` or `vehicle_imu_ai` depending on a parameter.
+
+---
+
+# 🔹 Full Flow Overview
+
+1. **PX4 already provides** `vehicle_imu` → EKF2 (default path).
+2. **Your AI model**:
+
+   * Subscribes to `/mavros/imu/data` in ROS.
+   * Denoises data and outputs `delta_angle`, `delta_velocity`, `*_dt`, and `timestamp_sample`.
+   * Sends this to PX4 over UDP (or MAVLink, UDP is simpler to start).
+3. **PX4 imu\_ai\_bridge module**:
+
+   * Receives UDP packets.
+   * Publishes them as `vehicle_imu_ai` (new uORB topic).
+4. **EKF2 changes**:
+
+   * Add parameter `EKF2_IMU_SRC`.
+   * Subscribe to both `vehicle_imu` and `vehicle_imu_ai`.
+   * Based on the parameter, consume one or the other.
+
+---
+
+# 🔹 Step-by-Step Instructions
+
+### 1. Add new uORB message
+
+Create `msg/vehicle_imu_ai.msg` (copy of `vehicle_imu.msg`):
+
+```text
+uint64 timestamp
+uint64 timestamp_sample
+uint32 accel_device_id
+uint32 gyro_device_id
+float32[3] delta_angle
+float32[3] delta_velocity
+float32 delta_angle_dt
+float32 delta_velocity_dt
+uint8 delta_angle_clipping
+uint8 delta_velocity_clipping
+uint8 accel_calibration_count
+uint8 gyro_calibration_count
+```
+
+Update `msg/CMakeLists.txt` to include it. Build once to generate headers.
+
+---
+
+### 2. PX4 bridge module (`imu_ai_bridge`)
+
+Create `src/modules/imu_ai_bridge/imu_ai_bridge.cpp`. This module:
+
+* Opens UDP port (default 14560).
+* Waits for AI packets.
+* Publishes them as `vehicle_imu_ai`.
+
+Key variable: `orb_advert_t _imu_ai_pub;`
+
+Minimal structure:
+
+```cpp
+#include <uORB/uORB.h>
+#include <uORB/topics/vehicle_imu_ai.h>
+#include <px4_platform_common/module.h>
+
+class ImuAIBridge final : public ModuleBase<ImuAIBridge> {
+public:
+    int run() {
+        int sock = socket(AF_INET, SOCK_DGRAM, 0);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(14560);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        bind(sock, (sockaddr*)&addr, sizeof(addr));
+
+        orb_advert_t pub = nullptr;
+        vehicle_imu_ai_s msg{};
+
+        while (!should_exit()) {
+            ssize_t n = recv(sock, &msg, sizeof(msg), 0);
+            if (n == sizeof(msg)) {
+                msg.timestamp = hrt_absolute_time();
+
+                if (!pub) pub = orb_advertise(ORB_ID(vehicle_imu_ai), &msg);
+                else orb_publish(ORB_ID(vehicle_imu_ai), pub, &msg);
+            }
+        }
+        return 0;
+    }
+};
+```
+
+Build with a `CMakeLists.txt` entry.
+
+---
+
+### 3. EKF2 parameter: `EKF2_IMU_SRC`
+
+Add in `src/modules/ekf2/ekf2_params.c`:
+
+```c
+/**
+ * IMU source for EKF2
+ * 0 = vehicle_imu (raw)
+ * 1 = vehicle_imu_ai (AI denoised)
+ */
+PARAM_DEFINE_INT32(EKF2_IMU_SRC, 0);
+```
+
+---
+
+### 4. EKF2 subscriptions
+
+In `EKF2.cpp`:
+
+At top of class:
+
+```cpp
+uORB::Subscription _imu_raw_sub{ORB_ID(vehicle_imu)};
+uORB::Subscription _imu_ai_sub{ORB_ID(vehicle_imu_ai)};
+int32_t _param_ekf2_imu_src{0};
+```
+
+In parameter update section:
+
+```cpp
+param_get(param_find("EKF2_IMU_SRC"), &_param_ekf2_imu_src);
+```
+
+---
+
+### 5. EKF2 data selection
+
+In EKF2 main loop where IMU is consumed:
+
+```cpp
+if (_param_ekf2_imu_src == 0) {
+    vehicle_imu_s imu{};
+    while (_imu_raw_sub.update(&imu)) {
+        handle_imu_sample(imu.timestamp_sample,
+                          imu.delta_angle, imu.delta_velocity,
+                          imu.delta_angle_dt, imu.delta_velocity_dt);
+    }
+} else {
+    vehicle_imu_ai_s imu{};
+    while (_imu_ai_sub.update(&imu)) {
+        handle_imu_sample(imu.timestamp_sample,
+                          imu.delta_angle, imu.delta_velocity,
+                          imu.delta_angle_dt, imu.delta_velocity_dt);
+    }
+}
+```
+
+---
+
+### 6. AI model side (ROS)
+
+In your AI code:
+
+* Subscribes to `/mavros/imu/data` (sensor\_msgs/Imu).
+* Denoises.
+* Pack into the same struct as `vehicle_imu_ai.msg`.
+* Send via UDP to `127.0.0.1:14560`.
+
+Python pseudo-code:
+
+```python
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+target = ("127.0.0.1", 14560)
+
+def publish_ai_sample(ts, da, dv, da_dt, dv_dt):
+    # pack in same struct order as vehicle_imu_ai.msg
+    pkt = struct.pack("<QQII3f3f2fBBBB",
+                      int(time.time()*1e6), ts, 0, 0,
+                      *da, *dv, da_dt, dv_dt,
+                      0, 0, 0, 0)
+    sock.sendto(pkt, target)
+```
+
+---
+
+### 7. Runtime switching
+
+Default is raw. To switch to AI:
+
+```bash
+param set EKF2_IMU_SRC 1
+ekf2 stop
+ekf2 start
+```
+
+Check with:
+
+```bash
+listener vehicle_imu_ai
+listener vehicle_imu
+ekf2 status
+```
+
+---
+
+# 🔹 Checklist
+
+* ✅ Raw `vehicle_imu` still exists for logs, vibration, redundancy.
+* ✅ Your denoised data flows into `vehicle_imu_ai`.
+* ✅ EKF2 parameter decides which one to use.
+* ✅ You can flip back to raw if AI breaks.
+
+---
+
+Would you like me to also give you the **exact struct packing layout for your Python sender** (matching PX4 C struct memory layout), so you don’t get byte misalignment issues when sending denoised IMU?
+
+
+### Message content and units
+
+1. EKF2 consumes **deltas**, not raw rates
+   `delta_angle` is radians integrated over the sample period, `delta_velocity` is meters per second integrated over the sample period, `*_dt` are the exact integration times in seconds.
+   **Assumption** your AI output can supply these deltas at the right rate.
+   **Check** if you only have angular rate and linear acceleration, integrate them to deltas using your exact sample dt, no resampling drift.
+
+
+### Timing and latency
+
+4. Timestamps
+   `timestamp_sample` must mark the **end** of the integration window in PX4 time.
+   **Assumption** your bridge fills `timestamp_sample` correctly.
+   **Safer choice** set `timestamp_sample = hrt_absolute_time()` inside the PX4 bridge at publish time, and set `*_dt` to your true integration lengths.
+   If you want perfect timing, subtract a measured constant pipeline delay and use that.
+
+5. Pipeline delay
+   Your AI adds compute time. EKF2 needs the right IMU delay.
+   **Assumption** default delay still works.
+   **Action** measure end to end latency and tune `EKF2_IMU_DLY` a little higher to match your path if needed. Watch innovation consistency and the estimator time offset messages.
+
+6. Rate and monotonicity
+   EKF2 expects a steady IMU stream.
+   **Assumption** your sender produces a clean 200 Hz or your chosen rate without gaps.
+   **Check** `listener vehicle_imu_ai` shows stable dt and increasing timestamps, `uorb top` shows no drops.
+
+### Calibration and corrections
+
+8. Multiple IMUs
+   If `EKF2_MULTI_IMU` is on, PX4 may expect more than one instance.
+   **Assumption** you run single IMU.
+   **Action** set `EKF2_MULTI_IMU = 0` during bring up, or publish consistent instances for each slot.
+
+### Data origin choice
+
+15. Where to inject
+    Publishing `vehicle_imu_ai` assumes your AI already produced correct deltas.
+    If not, a cleaner path is to inject at `sensor_gyro` and `sensor_accel` level and let PX4 do the standard integration. That costs a little more code but removes one assumption.
+
+### Quick validation checklist
+
+* `listener vehicle_imu` and `listener vehicle_imu_ai` show similar rates and dt.
+* With the AI source selected, `ekf2 status` shows healthy innovations and no time offset warnings.
+* Hover test shows near zero velocity innovations and stable bias estimates.
+* Fast attitude maneuvers show no extra lag compared to raw input.
+* Logs contain both raw and AI streams for later plots.
+

@@ -53,6 +53,20 @@
 PARAM_DEFINE_INT32(EKF2_PREDICT_US, 10000);
 
 /**
+ * IMU source for EKF2
+ *
+ * Select IMU data source for EKF2 state estimation:
+ * 0 = vehicle_imu (raw sensor data)
+ * 1 = vehicle_imu_ai (AI-processed sensor data)
+ *
+ * @group EKF2
+ * @value 0 Raw IMU data
+ * @value 1 AI-processed IMU data
+ * @reboot_required true
+ */
+PARAM_DEFINE_INT32(EKF2_IMU_SRC, 0);
+
+/**
  * Magnetometer measurement delay relative to IMU measurements
  *
  * @group EKF2

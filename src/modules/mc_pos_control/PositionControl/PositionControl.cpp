@@ -51,6 +51,22 @@ void PositionControl::setVelocityGains(const Vector3f &P, const Vector3f &I, con
 	_gain_vel_d = D;
 }
 
+void PositionControl::setRPTGains(const Vector3f &WN,
+				const Vector3f &SIGMA,
+				const Vector3f &KI,
+				const Vector3f &EPS,
+				const float MAX_XY_INTEGRATION,
+				const Vector3f &rotor_drag)
+{
+	_gain_RPT_wn = WN;
+	_gain_RPT_sigma = SIGMA;
+	_gain_RPT_ki = KI;
+	_gain_RPT_eps = EPS;
+	_max_xy_integration = MAX_XY_INTEGRATION;
+	_rotor_drag = rotor_drag;
+}
+
+
 void PositionControl::setVelocityLimits(const float vel_horizontal, const float vel_up, const float vel_down)
 {
 	_lim_vel_horizontal = vel_horizontal;
@@ -80,8 +96,13 @@ void PositionControl::updateHoverThrust(const float hover_thrust_new)
 	// so a_sp' = (a_sp - g) * Th / Th' + g
 	// we can then add a_sp' - a_sp to the current integrator to absorb the effect of changing Th by Th'
 	if (hover_thrust_new > FLT_EPSILON) {
-		_vel_int(2) += (_acc_sp(2) - CONSTANTS_ONE_G) * _hover_thrust / hover_thrust_new + CONSTANTS_ONE_G - _acc_sp(2);
+		// _vel_int(2) += (_acc_sp(2) - CONSTANTS_ONE_G) * _hover_thrust / hover_thrust_new + CONSTANTS_ONE_G - _acc_sp(2);
+
+		//_pos_int(2)<0
+		_pos_int(2) += (_acc_sp(2) - CONSTANTS_ONE_G) * _hover_thrust / hover_thrust_new + CONSTANTS_ONE_G - _acc_sp(2);
+
 		setHoverThrust(hover_thrust_new);
+		// PX4_INFO("new hover thrust: %8.4f", (double)_hover_thrust);
 	}
 }
 
@@ -107,9 +128,9 @@ bool PositionControl::update(const float dt)
 	bool valid = _inputValid();
 
 	if (valid) {
-		_positionControl();
-		_velocityControl(dt);
-
+		// _positionControl();
+		// _velocityControl(dt);
+		_RPTControl(dt);
 		_yawspeed_sp = PX4_ISFINITE(_yawspeed_sp) ? _yawspeed_sp : 0.f;
 		_yaw_sp = PX4_ISFINITE(_yaw_sp) ? _yaw_sp : _yaw; // TODO: better way to disable yaw control
 	}
@@ -125,6 +146,10 @@ void PositionControl::_positionControl()
 {
 	// P-position controller
 	Vector3f vel_sp_position = (_pos_sp - _pos).emult(_gain_pos_p);
+	PX4_INFO("desired position, %8.4f %8.4f %8.4f", (double)_pos_sp(0), (double)_pos_sp(1), (double)_pos_sp(2));
+	PX4_INFO("velocity control, %8.4f %8.4f %8.4f", (double)_vel_sp(0), (double)_vel_sp(1), (double)_vel_sp(2));
+	PX4_INFO("POSITION control: POS_error: %8.4f %8.4f %8.4f", (double)vel_sp_position(0), (double)vel_sp_position(1), (double)vel_sp_position(2));
+
 	// Position and feed-forward velocity setpoints or position states being NAN results in them not having an influence
 	ControlMath::addIfNotNanVector3f(_vel_sp, vel_sp_position);
 	// make sure there are no NAN elements for further reference while constraining
@@ -141,6 +166,8 @@ void PositionControl::_velocityControl(const float dt)
 {
 	// PID velocity control
 	Vector3f vel_error = _vel_sp - _vel;
+	// PX4_INFO("desired velocity, %8.4f %8.4f %8.4f", (double)_vel_sp(0), (double)_vel_sp(1), (double)_vel_sp(2));
+	// PX4_INFO("velocity control: vel_error: %8.4f %8.4f %8.4f", (double)vel_error(0), (double)vel_error(1), (double)vel_error(2));
 	Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
 
 	// No control input from setpoints or corresponding states which are NAN
@@ -193,16 +220,215 @@ void PositionControl::_velocityControl(const float dt)
 	// limit thrust integral
 	_vel_int(2) = math::min(fabsf(_vel_int(2)), CONSTANTS_ONE_G) * sign(_vel_int(2));
 }
+void PositionControl::_RPTControl(const float dt)
+{
+	// desired system responds parameters
+	// xy outer-loop controller
+	float wn_xy =_gain_RPT_wn(0);      //0.4f; 		// natural frequency
+	float sigma_xy = _gain_RPT_sigma(0);  //1.1f * 1.5f; // damping ratio
+	float ki_xy = _gain_RPT_ki(0);      //0.8f * 1.5f; 	// pole placement
+	float eps_xy = _gain_RPT_eps(0);   //1.0f * 0.4f; 	 // settling time
+	float F_xy[5];
+
+	// xy outer-loop controller
+	F_xy[0] = (wn_xy * wn_xy + 2 * sigma_xy * wn_xy * ki_xy) / (eps_xy * eps_xy);
+	F_xy[1] = (2 * sigma_xy * wn_xy + ki_xy) / eps_xy;
+	F_xy[2] = ki_xy * wn_xy * wn_xy / (eps_xy * eps_xy * eps_xy);
+	F_xy[3] = -(wn_xy * wn_xy + 2 * sigma_xy * wn_xy * ki_xy) / (eps_xy * eps_xy);
+	F_xy[4] = -(2 * sigma_xy * wn_xy + ki_xy) / eps_xy;
+
+
+
+	// z outer-loop controller
+	float wn_z = _gain_RPT_wn(2);      //0.5f;			// natural frequency
+	float sigma_z = _gain_RPT_sigma(2); //1.1f * 1.5f;	// damping ratio
+	float ki_z = _gain_RPT_ki(2);      //0.8f * 1.5f;		// pole placement
+	float eps_z = _gain_RPT_eps(2);   //1.0f * 0.3f;		// settling time
+
+	float F_z[5];
+
+	// z outer-loop controller
+	F_z[0] = (wn_z * wn_z + 2 * sigma_z * wn_z * ki_z) / (eps_z * eps_z);
+	F_z[1] = (2 * sigma_z * wn_z + ki_z) / eps_z;
+	F_z[2] = ki_z * wn_z * wn_z / (eps_z * eps_z * eps_z);
+	F_z[3] = -(wn_z * wn_z + 2 * sigma_z * wn_z * ki_z) / (eps_z * eps_z);
+	F_z[4] = -(2 * sigma_z * wn_z + ki_z) / eps_z;
+
+
+	// Constrain velocity in z-direction.
+	ControlMath::setZeroIfNanVector3f(_vel_sp);
+	ControlMath::setZeroIfNanVector3f(_acc_sp);
+	_vel_sp(2) = math::constrain(_vel_sp(2), -_lim_vel_up, _lim_vel_down);
+
+	// xy RPT controller
+	// error between desired and actual position
+	Vector3f pos_error = _pos_sp - _pos;
+	Vector3f vel_error = _vel_sp - _vel;
+	ControlMath::setZeroIfNanVector3f(pos_error);
+	ControlMath::setZeroIfNanVector3f(vel_error);
+
+
+	// PX4_INFO("pos_error: %8.4f %8.4f %8.4f", (double)pos_error(0), (double)pos_error(1), (double)pos_error(2));
+	// PX4_INFO("vel_error: %8.4f %8.4f %8.4f", (double)vel_error(0), (double)vel_error(1), (double)vel_error(2));
+	//p+d
+	Vector3f pos_gain = Vector3f(F_xy[0], F_xy[0], F_z[0]);
+	Vector3f vel_gain = Vector3f(F_xy[1], F_xy[1], F_z[1]);
+
+	Vector3f u_pos_error = pos_error.emult(pos_gain);
+	Vector3f u_vel_error = vel_error.emult(vel_gain);
+
+
+	//i
+	Vector3f inte_pos_gain = Vector3f(F_xy[2], F_xy[2], F_z[2]);
+	Vector3f u_pos_int = _pos_int;
+	// PX4_WARN("u_pos_int: %8.4f %8.4f %8.4f", (double)u_pos_int(0), (double)u_pos_int(1), (double)u_pos_int(2));
+
+
+	// _rpt_integrator_msg.timestamp = hrt_absolute_time();
+	// _rpt_integrator_msg.x = u_pos_int(0);
+	// _rpt_integrator_msg.y = u_pos_int(1);
+	// _rpt_integrator_msg.z = u_pos_int(2);
+
+	// _rpt_integrator_pub.publish(_rpt_integrator_msg);
+
+	// anti-windup for xy axes
+	float MAX_INT = _max_xy_integration;
+	_pos_int(0)=math::min(fabsf(_pos_int(0)),MAX_INT) * sign(_pos_int(0));
+	_pos_int(1)=math::min(fabsf(_pos_int(1)),MAX_INT) * sign(_pos_int(1));
+
+	// rotor drag compensation, the current _acc_sp is only the feedforward acceleration
+	_accel2RotationMatrix(_acc_sp);
+
+	matrix::Matrix3f Drag_matrix=matrix::diag(_rotor_drag);
+	Vector3f u_drag = _R_ref*Drag_matrix*_R_ref.transpose()*_vel_sp;
+
+	// No control input from setpoints or corresponding states which are NAN
+	// desired feed-forward acceleration: _acc_sp
+	// PX4_WARN("feedforward acc_sp: %8.4f %8.4f %8.4f", (double)_acc_sp(0), (double)_acc_sp(1), (double)_acc_sp(2));
+
+	ControlMath::addIfNotNanVector3f(_acc_sp, u_pos_error);
+	ControlMath::addIfNotNanVector3f(_acc_sp, u_vel_error);
+	ControlMath::addIfNotNanVector3f(_acc_sp, u_pos_int);
+	ControlMath::addIfNotNanVector3f(_acc_sp, u_drag);
+
+
+
+
+	//anti-windup
+	_accelerationControl();
+
+	// Integrator anti-windup in vertical direction
+	if ((_thr_sp(2) >= -_lim_thr_min && pos_error(2) >= 0.0f) ||
+	    (_thr_sp(2) <= -_lim_thr_max && pos_error(2) <= 0.0f)) {
+		pos_error(2) = 0.f;
+	}
+
+	// Prioritize vertical control while keeping a horizontal margin
+	const Vector2f thrust_sp_xy(_thr_sp);
+	const float thrust_sp_xy_norm = thrust_sp_xy.norm();
+	const float thrust_max_squared = math::sq(_lim_thr_max);
+
+	// Determine how much vertical thrust is left keeping horizontal margin
+	const float allocated_horizontal_thrust = math::min(thrust_sp_xy_norm, _lim_thr_xy_margin);
+	const float thrust_z_max_squared = thrust_max_squared - math::sq(allocated_horizontal_thrust);
+
+	// Saturate maximal vertical thrust
+	_thr_sp(2) = math::max(_thr_sp(2), -sqrtf(thrust_z_max_squared));
+
+	// Determine how much horizontal thrust is left after prioritizing vertical control
+	const float thrust_max_xy_squared = thrust_max_squared - math::sq(_thr_sp(2));
+	float thrust_max_xy = 0;
+
+	if (thrust_max_xy_squared > 0) {
+		thrust_max_xy = sqrtf(thrust_max_xy_squared);
+	}
+
+	// Saturate thrust in horizontal direction
+	if (thrust_sp_xy_norm > thrust_max_xy) {
+		_thr_sp.xy() = thrust_sp_xy / thrust_sp_xy_norm * thrust_max_xy;
+	}
+
+	// Use tracking Anti-Windup for horizontal direction: during saturation, the integrator is used to unsaturate the output
+	// see Anti-Reset Windup for PID controllers, L.Rundqwist, 1990
+	const Vector2f acc_sp_xy_limited = Vector2f(_thr_sp) * (CONSTANTS_ONE_G / _hover_thrust);
+	const float arw_gain = 2.f / pos_gain(0);
+	pos_error.xy() = Vector2f(pos_error) - (arw_gain * (Vector2f(_acc_sp) - acc_sp_xy_limited));
+
+	// Make sure integral doesn't get NAN
+	ControlMath::setZeroIfNanVector3f(pos_error);
+	// Update integral part of velocity control
+	_pos_int += pos_error.emult(inte_pos_gain) * dt;
+
+	// limit thrust integral
+	_pos_int(2) = math::min(fabsf(_pos_int(2)), CONSTANTS_ONE_G) * sign(_pos_int(2));
+
+}
+
+
+
+void PositionControl::_accel2RotationMatrix(matrix::Vector3f acc_ref)
+
+{
+	// zero vector, no direction, set safe level value
+	if (acc_ref.norm_squared() < FLT_EPSILON) {
+		acc_ref(2) = 1.f;
+	}
+	Vector3f body_z_ref = Vector3f(-acc_ref(0), -acc_ref(1), -acc_ref(2)+CONSTANTS_ONE_G).normalized();
+
+	const Vector3f x_C{cosf(_yaw_sp), sinf(_yaw_sp), 0.f};
+
+	// desired body_y axis, orthogonal to body_z_ref
+	Vector3f body_y_ref = body_z_ref % x_C;
+	body_y_ref.normalize();
+
+	// calculate the body_x
+	Vector3f body_x_ref = body_y_ref % body_z_ref;
+
+
+	// fill rotation matrix
+	for (int i = 0; i < 3; i++) {
+		_R_ref(i, 0) = body_x_ref(i);
+		_R_ref(i, 1) = body_y_ref(i);
+		_R_ref(i, 2) = body_z_ref(i);
+	}
+}
 
 void PositionControl::_accelerationControl()
 {
 	// Assume standard acceleration due to gravity in vertical direction for attitude generation
-	Vector3f body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), CONSTANTS_ONE_G).normalized();
-	ControlMath::limitTilt(body_z, Vector3f(0, 0, 1), _lim_tilt);
+	// Vector3f body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), CONSTANTS_ONE_G).normalized();
+	Vector3f body_z;
+	// PX4_INFO("desired acceleration, %8.4f %8.4f %8.4f", (double)_acc_sp(0), (double)_acc_sp(1), (double)_acc_sp(2));
+	if (_acc_sp(2)<CONSTANTS_ONE_G)
+	{
+		// body z direction is the opposite direction of the desired acceleration
+		// but is the same direction of the Gravity since both are in the down frame
+		body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), -_acc_sp(2)+CONSTANTS_ONE_G).normalized();
+	}
+	else if (_acc_sp(2)>=CONSTANTS_ONE_G && _acc_sp(2)<100) //100 is the value for drone does not take off
+	{
+		body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), -_acc_sp(2)+CONSTANTS_ONE_G).normalized();
+		_acc_sp(2) = CONSTANTS_ONE_G;
+
+	}
+	else
+	{
+		body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), CONSTANTS_ONE_G).normalized();
+		_acc_sp(2) = CONSTANTS_ONE_G;
+
+	}
+	// ControlMath::limitTilt(body_z, Vector3f(0, 0, 1), _lim_tilt);
 	// Scale thrust assuming hover thrust produces standard gravity
-	float collective_thrust = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hover_thrust;
+	// float collective_thrust = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hover_thrust;
+
+	// unlimited the thrust to always produce the standard gravity
+	// the thrust magitude is the maginitude of the sum of (the desired acceleration and the standard gravity)
+	// the thrust direction is opposite to the sum of (the desired acceleration and the standard gravity)
+	float collective_thrust =-(_acc_sp+Vector3f(0, 0, -CONSTANTS_ONE_G)).norm()*( _hover_thrust / CONSTANTS_ONE_G);
+
+
 	// Project thrust to planned body attitude
-	collective_thrust /= (Vector3f(0, 0, 1).dot(body_z));
+	// collective_thrust /= (Vector3f(0, 0, 1).dot(body_z));
 	collective_thrust = math::min(collective_thrust, -_lim_thr_min);
 	_thr_sp = body_z * collective_thrust;
 }
