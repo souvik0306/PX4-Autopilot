@@ -31,8 +31,6 @@
  *
  ****************************************************************************/
 
-#include <cmath>
-
 #include <gtest/gtest.h>
 #include <ControlMath.hpp>
 #include <px4_platform_common/defines.h>
@@ -108,20 +106,18 @@ TEST(ControlMathTest, ThrottleAttitudeMapping)
 	float yaw = 0.f;
 	vehicle_attitude_setpoint_s att{};
 	thrustToAttitude(thr, yaw, att);
-	EXPECT_FLOAT_EQ(att.q_d[0], 1.f);
-	EXPECT_FLOAT_EQ(att.q_d[1], 0.f);
-	EXPECT_FLOAT_EQ(att.q_d[2], 0.f);
-	EXPECT_FLOAT_EQ(att.q_d[3], 0.f);
+	EXPECT_FLOAT_EQ(att.roll_body, 0.f);
+	EXPECT_FLOAT_EQ(att.pitch_body, 0.f);
+	EXPECT_FLOAT_EQ(att.yaw_body, 0.f);
 	EXPECT_FLOAT_EQ(att.thrust_body[2], -1.f);
 
 	/* expected: same as before but with 90 yaw
 	 * reason: only yaw changed */
 	yaw = M_PI_2_F;
 	thrustToAttitude(thr, yaw, att);
-	Eulerf euler_att(Quatf(att.q_d));
-	EXPECT_FLOAT_EQ(euler_att.phi(), 0.f);
-	EXPECT_FLOAT_EQ(euler_att.theta(), 0.f);
-	EXPECT_FLOAT_EQ(euler_att.psi(), M_PI_2_F);
+	EXPECT_FLOAT_EQ(att.roll_body, 0.f);
+	EXPECT_FLOAT_EQ(att.pitch_body, 0.f);
+	EXPECT_FLOAT_EQ(att.yaw_body, M_PI_2_F);
 	EXPECT_FLOAT_EQ(att.thrust_body[2], -1.f);
 
 	/* expected: same as before but roll 180
@@ -129,10 +125,9 @@ TEST(ControlMathTest, ThrottleAttitudeMapping)
 	 * order is: 1. roll, 2. pitch, 3. yaw */
 	thr = Vector3f(0.f, 0.f, 1.f);
 	thrustToAttitude(thr, yaw, att);
-	Eulerf euler_att2(Quatf(att.q_d));
-	EXPECT_FLOAT_EQ(std::abs(euler_att2.phi()), std::abs(M_PI_F));
-	EXPECT_FLOAT_EQ(euler_att2.theta(), 0.f);
-	EXPECT_FLOAT_EQ(euler_att2.psi(), M_PI_2_F);
+	EXPECT_FLOAT_EQ(att.roll_body, -M_PI_F);
+	EXPECT_FLOAT_EQ(att.pitch_body, 0.f);
+	EXPECT_FLOAT_EQ(att.yaw_body, M_PI_2_F);
 	EXPECT_FLOAT_EQ(att.thrust_body[2], -1.f);
 }
 
@@ -254,7 +249,7 @@ TEST(ControlMathTest, addIfNotNan)
 	v = NAN;
 	// both summands are NAN
 	ControlMath::addIfNotNan(v, NAN);
-	EXPECT_TRUE(std::isnan(v));
+	EXPECT_TRUE(isnan(v));
 	// regular value gets added to NAN and overwrites it
 	ControlMath::addIfNotNan(v, 3.f);
 	EXPECT_EQ(v, 3.f);

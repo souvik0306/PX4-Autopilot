@@ -39,12 +39,10 @@
 
 #include "PositionControl/PositionControl.hpp"
 #include "Takeoff/Takeoff.hpp"
-#include "GotoControl/GotoControl.hpp"
 
 #include <drivers/drv_hrt.h>
-#include <lib/mathlib/math/filter/AlphaFilter.hpp>
-#include <lib/mathlib/math/filter/NotchFilter.hpp>
-#include <lib/mathlib/math/WelfordMean.hpp>
+#include <lib/controllib/blocks.hpp>
+#include <lib/hysteresis/hysteresis.h>
 #include <lib/perf/perf_counter.h>
 #include <lib/slew_rate/SlewRateYaw.hpp>
 #include <lib/systemlib/mavlink_log.h>
@@ -60,7 +58,6 @@
 #include <uORB/SubscriptionCallback.hpp>
 #include <uORB/topics/hover_thrust_estimate.h>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/trajectory_setpoint.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
 #include <uORB/topics/vehicle_constraints.h>
 #include <uORB/topics/vehicle_control_mode.h>
@@ -70,8 +67,8 @@
 
 using namespace time_literals;
 
-class MulticopterPositionControl : public ModuleBase<MulticopterPositionControl>, public ModuleParams,
-	public px4::ScheduledWorkItem
+class MulticopterPositionControl : public ModuleBase<MulticopterPositionControl>, public control::SuperBlock,
+	public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
 	MulticopterPositionControl(bool vtol = false);
@@ -91,30 +88,28 @@ public:
 private:
 	void Run() override;
 
-	TakeoffHandling _takeoff; /**< state machine and ramp to bring the vehicle off the ground without jumps */
+	Takeoff _takeoff; /**< state machine and ramp to bring the vehicle off the ground without jumps */
 
 	orb_advert_t _mavlink_log_pub{nullptr};
 
-	uORB::PublicationData<takeoff_status_s>              _takeoff_status_pub{ORB_ID(takeoff_status)};
-	uORB::Publication<vehicle_attitude_setpoint_s>	     _vehicle_attitude_setpoint_pub{ORB_ID(vehicle_attitude_setpoint)};
-	uORB::Publication<vehicle_local_position_setpoint_s> _local_pos_sp_pub{ORB_ID(vehicle_local_position_setpoint)};	/**< vehicle local position setpoint publication */
+	uORB::PublicationData<takeoff_status_s>              _takeoff_status_pub {ORB_ID(takeoff_status)};
+	uORB::Publication<vehicle_attitude_setpoint_s>	     _vehicle_attitude_setpoint_pub {ORB_ID(vehicle_attitude_setpoint)};
+	uORB::Publication<vehicle_local_position_setpoint_s> _local_pos_sp_pub {ORB_ID(vehicle_local_position_setpoint)};	/**< vehicle local position setpoint publication */
 
-	uORB::SubscriptionCallbackWorkItem _local_pos_sub{this, ORB_ID(vehicle_local_position)};	/**< vehicle local position */
+	uORB::SubscriptionCallbackWorkItem _local_pos_sub {this, ORB_ID(vehicle_local_position)};	/**< vehicle local position */
 
-	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
+	uORB::SubscriptionInterval _parameter_update_sub {ORB_ID(parameter_update), 1_s};
 
-	uORB::Subscription _hover_thrust_estimate_sub{ORB_ID(hover_thrust_estimate)};
-	uORB::Subscription _trajectory_setpoint_sub{ORB_ID(trajectory_setpoint)};
-	uORB::Subscription _vehicle_constraints_sub{ORB_ID(vehicle_constraints)};
-	uORB::Subscription _vehicle_control_mode_sub{ORB_ID(vehicle_control_mode)};
-	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
+	uORB::Subscription _hover_thrust_estimate_sub {ORB_ID(hover_thrust_estimate)};
+	uORB::Subscription _trajectory_setpoint_sub {ORB_ID(trajectory_setpoint)};
+	uORB::Subscription _vehicle_constraints_sub {ORB_ID(vehicle_constraints)};
+	uORB::Subscription _vehicle_control_mode_sub {ORB_ID(vehicle_control_mode)};
+	uORB::Subscription _vehicle_land_detected_sub {ORB_ID(vehicle_land_detected)};
 
-	hrt_abstime _time_stamp_last_loop{0};		/**< time stamp of last loop iteration */
-	hrt_abstime _time_position_control_enabled{0};
+	hrt_abstime	_time_stamp_last_loop{0};		/**< time stamp of last loop iteration */
 
-	trajectory_setpoint_s _setpoint{PositionControl::empty_trajectory_setpoint};
-	trajectory_setpoint_s _last_valid_setpoint{PositionControl::empty_trajectory_setpoint};
-	vehicle_control_mode_s _vehicle_control_mode{};
+	vehicle_local_position_setpoint_s _setpoint {};
+	vehicle_control_mode_s _vehicle_control_mode {};
 
 	vehicle_constraints_s _vehicle_constraints {
 		.timestamp = 0,
@@ -149,25 +144,36 @@ private:
 		(ParamFloat<px4::params::MPC_TILTMAX_AIR>)  _param_mpc_tiltmax_air,
 		(ParamFloat<px4::params::MPC_THR_HOVER>)    _param_mpc_thr_hover,
 		(ParamBool<px4::params::MPC_USE_HTE>)       _param_mpc_use_hte,
-		(ParamBool<px4::params::MPC_ACC_DECOUPLE>)  _param_mpc_acc_decouple,
 
-		(ParamFloat<px4::params::MPC_VEL_LP>)       _param_mpc_vel_lp,
-		(ParamFloat<px4::params::MPC_VEL_NF_FRQ>)   _param_mpc_vel_nf_frq,
-		(ParamFloat<px4::params::MPC_VEL_NF_BW>)    _param_mpc_vel_nf_bw,
-		(ParamFloat<px4::params::MPC_VELD_LP>)      _param_mpc_veld_lp,
+		//RPT parameters
+		(ParamFloat<px4::params::MPC_RPT_XY_WN>)    _param_mpc_rpt_xy_wn,
+		(ParamFloat<px4::params::MPC_RPT_Z_WN>)     _param_mpc_rpt_z_wn,
+
+		(ParamFloat<px4::params::MPC_RPT_XY_SIGMA>)  _param_mpc_rpt_xy_sigma,
+		(ParamFloat<px4::params::MPC_RPT_Z_SIGMA>)   _param_mpc_rpt_z_sigma,
+
+		(ParamFloat<px4::params::MPC_RPT_XY_KI>)    _param_mpc_rpt_xy_ki,
+		(ParamFloat<px4::params::MPC_RPT_Z_KI>)     _param_mpc_rpt_z_ki,
+
+		(ParamFloat<px4::params::MPC_RPT_XY_EPS>)    _param_mpc_rpt_xy_eps,
+		(ParamFloat<px4::params::MPC_RPT_Z_EPS>)     _param_mpc_rpt_z_eps,
+
+		(ParamFloat<px4::params::MPC_RPT_XY_MAX_I>)    _param_mpc_rpt_max_xy_integration,
+
+		(ParamFloat<px4::params::MPC_RPT_R_DRAG_X>)     _param_mpc_rpt_rotor_drag_x,
+		(ParamFloat<px4::params::MPC_RPT_R_DRAG_Y>)     _param_mpc_rpt_rotor_drag_y,
+		(ParamFloat<px4::params::MPC_RPT_R_DRAG_Z>)     _param_mpc_rpt_rotor_drag_z,
 
 		// Takeoff / Land
-		(ParamFloat<px4::params::COM_SPOOLUP_TIME>) _param_com_spoolup_time, /**< time to let motors spool up after arming */
-		(ParamBool<px4::params::COM_THROW_EN>)      _param_com_throw_en, /**< throw launch enabled  */
+		(ParamFloat<px4::params::MPC_SPOOLUP_TIME>) _param_mpc_spoolup_time, /**< time to let motors spool up after arming */
 		(ParamFloat<px4::params::MPC_TKO_RAMP_T>)   _param_mpc_tko_ramp_t,   /**< time constant for smooth takeoff ramp */
 		(ParamFloat<px4::params::MPC_TKO_SPEED>)    _param_mpc_tko_speed,
 		(ParamFloat<px4::params::MPC_LAND_SPEED>)   _param_mpc_land_speed,
 
 		(ParamFloat<px4::params::MPC_VEL_MANUAL>)   _param_mpc_vel_manual,
-		(ParamFloat<px4::params::MPC_VEL_MAN_BACK>) _param_mpc_vel_man_back,
-		(ParamFloat<px4::params::MPC_VEL_MAN_SIDE>) _param_mpc_vel_man_side,
 		(ParamFloat<px4::params::MPC_XY_CRUISE>)    _param_mpc_xy_cruise,
 		(ParamFloat<px4::params::MPC_LAND_ALT2>)    _param_mpc_land_alt2,    /**< downwards speed limited below this altitude */
+		(ParamInt<px4::params::MPC_POS_MODE>)       _param_mpc_pos_mode,
 		(ParamInt<px4::params::MPC_ALT_MODE>)       _param_mpc_alt_mode,
 		(ParamFloat<px4::params::MPC_TILTMAX_LND>)  _param_mpc_tiltmax_lnd,  /**< maximum tilt for landing and smooth takeoff */
 		(ParamFloat<px4::params::MPC_THR_MIN>)      _param_mpc_thr_min,
@@ -185,39 +191,33 @@ private:
 		(ParamFloat<px4::params::MPC_MAN_Y_TAU>)    _param_mpc_man_y_tau,
 
 		(ParamFloat<px4::params::MPC_XY_VEL_ALL>)   _param_mpc_xy_vel_all,
-		(ParamFloat<px4::params::MPC_Z_VEL_ALL>)    _param_mpc_z_vel_all,
-
-		(ParamFloat<px4::params::MPC_XY_ERR_MAX>) _param_mpc_xy_err_max,
-		(ParamFloat<px4::params::MPC_YAWRAUTO_MAX>) _param_mpc_yawrauto_max,
-		(ParamFloat<px4::params::MPC_YAWRAUTO_ACC>) _param_mpc_yawrauto_acc
+		(ParamFloat<px4::params::MPC_Z_VEL_ALL>)    _param_mpc_z_vel_all
 	);
 
-	math::WelfordMean<float> _sample_interval_s{};
+	control::BlockDerivative _vel_x_deriv; /**< velocity derivative in x */
+	control::BlockDerivative _vel_y_deriv; /**< velocity derivative in y */
+	control::BlockDerivative _vel_z_deriv; /**< velocity derivative in z */
 
-	AlphaFilter<matrix::Vector2f> _vel_xy_lp_filter{};
-	AlphaFilter<float> _vel_z_lp_filter{};
-
-	math::NotchFilter<matrix::Vector2f> _vel_xy_notch_filter{};
-	math::NotchFilter<float> _vel_z_notch_filter{};
-
-	AlphaFilter<matrix::Vector2f> _vel_deriv_xy_lp_filter{};
-	AlphaFilter<float> _vel_deriv_z_lp_filter{};
-
-	GotoControl _goto_control; ///< class for handling smooth goto position setpoints
-	PositionControl _control; ///< class for core PID position control
+	PositionControl _control;  /**< class for core PID position control */
 
 	hrt_abstime _last_warn{0}; /**< timer when the last warn message was sent out */
+
+	bool _in_failsafe{false};  /**< true if failsafe was entered within current cycle */
 
 	bool _hover_thrust_initialized{false};
 
 	/** Timeout in us for trajectory data to get considered invalid */
 	static constexpr uint64_t TRAJECTORY_STREAM_TIMEOUT_US = 500_ms;
 
+	/** If Flighttask fails, keep 0.2 seconds the current setpoint before going into failsafe land */
+	static constexpr uint64_t LOITER_TIME_BEFORE_DESCEND = 200_ms;
+
 	/** During smooth-takeoff, below ALTITUDE_THRESHOLD the yaw-control is turned off and tilt is limited */
 	static constexpr float ALTITUDE_THRESHOLD = 0.3f;
 
 	static constexpr float MAX_SAFE_TILT_DEG = 89.f; // Numerical issues above this value due to tanf
 
+	systemlib::Hysteresis _failsafe_land_hysteresis{false}; /**< becomes true if task did not update correctly for LOITER_TIME_BEFORE_DESCEND */
 	SlewRate<float> _tilt_limit_slew_rate;
 
 	uint8_t _vxy_reset_counter{0};
@@ -238,21 +238,20 @@ private:
 	/**
 	 * Check for validity of positon/velocity states.
 	 */
-	PositionControlStates set_vehicle_states(const vehicle_local_position_s &local_pos, const float dt_s);
+	PositionControlStates set_vehicle_states(const vehicle_local_position_s &local_pos);
 
 	/**
-	 * Generate setpoint to bridge no executable setpoint being available.
-	 * Used to handle transitions where no proper setpoint was generated yet and when the received setpoint is invalid.
-	 * This should only happen briefly when transitioning and never during mode operation or by design.
+	 * Failsafe.
+	 * If flighttask fails for whatever reason, then do failsafe. This could
+	 * occur if the commander fails to switch to a mode in case of invalid states or
+	 * setpoints. The failsafe will occur after LOITER_TIME_BEFORE_DESCEND. If force is set
+	 * to true, the failsafe will be initiated immediately.
 	 */
-	trajectory_setpoint_s generateFailsafeSetpoint(const hrt_abstime &now, const PositionControlStates &states, bool warn);
+	void failsafe(const hrt_abstime &now, vehicle_local_position_setpoint_s &setpoint, const PositionControlStates &states,
+		      bool warn);
 
 	/**
-	 * @brief adjust existing (or older) setpoint with any EKF reset deltas and update the local counters
-	 *
-	 * @param[in] vehicle_local_position struct containing EKF reset deltas and counters
-	 * @param[out] setpoint trajectory setpoint struct to be adjusted
+	 * Reset setpoints to NAN
 	 */
-	void adjustSetpointForEKFResets(const vehicle_local_position_s &vehicle_local_position,
-					trajectory_setpoint_s &setpoint);
+	void reset_setpoint_to_nan(vehicle_local_position_setpoint_s &setpoint);
 };
