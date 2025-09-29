@@ -113,8 +113,9 @@ Add in `src/modules/ekf2/ekf2_params.c`:
 ```c
 /**
  * IMU source for EKF2
- * 0 = vehicle_imu (raw)
- * 1 = vehicle_imu_ai (AI denoised)
+ * 0 = Automatic (prefer vehicle_imu_ai when it's available)
+ * 1 = vehicle_imu (raw)
+ * 2 = vehicle_imu_ai (AI denoised)
  */
 PARAM_DEFINE_INT32(EKF2_IMU_SRC, 0);
 ```
@@ -193,10 +194,18 @@ def publish_ai_sample(ts, da, dv, da_dt, dv_dt):
 
 ### 7. Runtime switching
 
-Default is raw. To switch to AI:
+By default EKF2 will remain on raw `vehicle_imu` until `vehicle_imu_ai` starts publishing, then it will swap over automatically. Use the parameter only when you need to override that behaviour:
 
 ```bash
+# Force raw only
 param set EKF2_IMU_SRC 1
+
+# Force AI even if raw is present
+param set EKF2_IMU_SRC 2
+
+# Return to automatic selection
+param set EKF2_IMU_SRC 0
+
 ekf2 stop
 ekf2 start
 ```
@@ -215,7 +224,7 @@ ekf2 status
 
 * ✅ Raw `vehicle_imu` still exists for logs, vibration, redundancy.
 * ✅ Your denoised data flows into `vehicle_imu_ai`.
-* ✅ EKF2 parameter decides which one to use.
+* ✅ EKF2 parameter lets you override the automatic source selection.
 * ✅ You can flip back to raw if AI breaks.
 
 ---

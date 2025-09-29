@@ -21,7 +21,7 @@ if [ -z "${PX4_ROOT:-}" ]; then
 fi
 
 PX4_LAUNCH_CMD="${PX4_LAUNCH_CMD:-make px4_sitl gazebo}"
-IMU_BRIDGE_PORT="${IMU_BRIDGE_PORT:-14561}"
+IMU_BRIDGE_PORT="${IMU_BRIDGE_PORT:-14560}"
 
 tmux new-session -d -s "$SESSION"
 
@@ -39,12 +39,12 @@ sleep 8
 tmux send-keys -t "$SESSION":0.1 C-m
 tmux send-keys -t "$SESSION":0.1 "imu_ai_bridge start -p $IMU_BRIDGE_PORT" C-m
 
-# Optionally switch EKF2 to AI source after the stream should be alive.
-# Assumes EKF2_IMU_SRC exists in your build. Comment these if you prefer manual switch.
-# Note: Avoid auto-switching EKF2 to prevent poll timeouts while EKF2 is stopped.
-# After confirming 'listener vehicle_imu_ai 5' shows updates, run manually in
-# the px4 console (pxh>):
-#   param set EKF2_IMU_SRC 1; ekf2 stop; ekf2 start; ekf2 status
+# EKF2 now switches to vehicle_imu_ai automatically once the bridge is publishing.
+# Use the pxh console only if you need to force a specific source:
+#   param set EKF2_IMU_SRC 1   # raw only
+#   param set EKF2_IMU_SRC 2   # AI only
+#   param set EKF2_IMU_SRC 0   # return to automatic
+#   ekf2 stop; ekf2 start; ekf2 status
 
 # Pane 2: MAVROS launch (split below PX4 SITL)
 tmux split-window -v -t $SESSION:0.1
@@ -52,7 +52,7 @@ tmux send-keys -t $SESSION:0.2 "source /opt/ros/noetic/setup.bash && roslaunch m
 
 # Pane 3: AI IMU Sender (split below MAVROS)
 tmux split-window -v -t $SESSION:0.2
-tmux send-keys -t $SESSION:0.3 "sleep 15; source /opt/ros/noetic/setup.bash && python3 ~/Downloads/gestelt_ws/PX4-Autopilot/fake_imu.py" C-m
+tmux send-keys -t $SESSION:0.3 "sleep 5; source /opt/ros/noetic/setup.bash && python3 \"$PX4_ROOT/fake_imu.py\" _udp_port:=$IMU_BRIDGE_PORT" C-m
 
 # Attach to the session
 tmux attach -t $SESSION

@@ -276,6 +276,8 @@ private:
 
        bool _callback_registered{false};
        ImuSource _imu_source{ImuSource::SensorCombined};
+       bool _vehicle_imu_ai_ready{false};
+       bool _vehicle_imu_ai_waiting_logged{false};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};
