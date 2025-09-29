@@ -1,21 +1,25 @@
 #!/bin/bash
 
 SESSION="px4_sim"
+PX4_ROOT="${PX4_ROOT:-$HOME/Downloads/gestelt_ws/PX4-Autopilot}"
+PX4_LAUNCH_CMD="${PX4_LAUNCH_CMD:-make px4_sitl gazebo}"
+IMU_BRIDGE_PORT="${IMU_BRIDGE_PORT:-14561}"
 
-tmux new-session -d -s $SESSION
+tmux new-session -d -s "$SESSION"
 
 # Split horizontally: left (pane 0) for QGC, right (pane 1) for PX4 SITL
-tmux split-window -h -p 95 -t $SESSION    # Pane 0: 5% width (QGC), Pane 1: 95% width (PX4 SITL)
+tmux split-window -h -p 95 -t "$SESSION"    # Pane 0: 5% width (QGC), Pane 1: 95% width (PX4 SITL)
 
 # Pane 0: QGroundControl (left, small)
-tmux send-keys -t $SESSION:0.0 "cd ~/Downloads && ./QGroundControl.AppImage" C-m
+tmux send-keys -t "$SESSION":0.0 "cd ~/Downloads && ./QGroundControl.AppImage" C-m
 
 # Pane 1: PX4 SITL with Gazebo (right, large)
-tmux send-keys -t $SESSION:0.1 "cd ~/Downloads/gestelt_ws/PX4-Autopilot && make px4_sitl gazebo" C-m
+tmux send-keys -t "$SESSION":0.1 "cd $PX4_ROOT && $PX4_LAUNCH_CMD" C-m
 
-# Host-side waits, then send commands into PX4 shell (pane 1)
+# Host-side waits, then nudge the pxh prompt before starting the bridge
 sleep 8
-tmux send-keys -t $SESSION:0.1 "imu_ai_bridge start -p 14561" C-m
+tmux send-keys -t "$SESSION":0.1 C-m
+tmux send-keys -t "$SESSION":0.1 "imu_ai_bridge start -p $IMU_BRIDGE_PORT" C-m
 
 # Optionally switch EKF2 to AI source after the stream should be alive.
 # Assumes EKF2_IMU_SRC exists in your build. Comment these if you prefer manual switch.
