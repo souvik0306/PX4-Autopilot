@@ -178,7 +178,25 @@ EKF2::EKF2(bool multi_mode, const px4::wq_config_t &config, bool replay_mode):
 	_estimator_states_pub.advertise();
 	_estimator_status_flags_pub.advertise();
 	_estimator_status_pub.advertise();
+
+	_imu_source = _multi_mode ? ImuSource::VehicleImu : ImuSource::SensorCombined;
 }
+
+uORB::SubscriptionCallbackWorkItem *EKF2::imuCallbackSubscription(ImuSource source)
+{
+	switch (source) {
+	case ImuSource::VehicleImu:
+		return &_vehicle_imu_sub;
+
+	case ImuSource::VehicleImuAi:
+		return &_vehicle_imu_ai_sub;
+
+	case ImuSource::SensorCombined:
+	default:
+		return &_sensor_combined_sub;
+	}
+}
+
 
 EKF2::~EKF2()
 {
@@ -219,7 +237,7 @@ bool EKF2::multi_init(int imu, int mag)
 	_odometry_pub.advertise();
 	_wind_pub.advertise();
 
-	bool changed_instance = _vehicle_imu_sub.ChangeInstance(imu) && _magnetometer_sub.ChangeInstance(mag);
+	bool changed_instance = _vehicle_imu_sub.ChangeInstance(imu) && _vehicle_imu_ai_sub.ChangeInstance(imu) && _magnetometer_sub.ChangeInstance(mag);
 
 	const int status_instance = _estimator_states_pub.get_instance();
 
@@ -270,6 +288,7 @@ void EKF2::Run()
 	if (should_exit()) {
 		_sensor_combined_sub.unregisterCallback();
 		_vehicle_imu_sub.unregisterCallback();
+		_vehicle_imu_ai_sub.unregisterCallback();
 
 		return;
 	}
@@ -323,15 +342,37 @@ void EKF2::Run()
 				}
 			}
 		}
+
+		ImuSource requested_source = _imu_source;
+
+		if (_multi_mode) {
+			switch (_param_ekf2_imu_src.get()) {
+			case 1:
+				requested_source = ImuSource::VehicleImuAi;
+				break;
+
+			case 0:
+			default:
+				requested_source = ImuSource::VehicleImu;
+				break;
+			}
+
+		} else {
+			requested_source = ImuSource::SensorCombined;
+		}
+
+		if (requested_source != _imu_source) {
+			if (_callback_registered) {
+				imuCallbackSubscription(_imu_source)->unregisterCallback();
+				_callback_registered = false;
+			}
+
+			_imu_source = requested_source;
+		}
 	}
 
 	if (!_callback_registered) {
-		if (_multi_mode) {
-			_callback_registered = _vehicle_imu_sub.registerCallback();
-
-		} else {
-			_callback_registered = _sensor_combined_sub.registerCallback();
-		}
+		_callback_registered = imuCallbackSubscription(_imu_source)->registerCallback();
 
 		if (!_callback_registered) {
 			ScheduleDelayed(10_ms);
@@ -366,201 +407,205 @@ void EKF2::Run()
 
 	hrt_abstime imu_dt = 0; // for tracking time slip later
 
-	if (_multi_mode) {
-		// Select IMU source based on EKF2_IMU_SRC parameter
-		if (_param_ekf2_imu_src.get() == 1) {
-			// Use AI-processed IMU data
-			const unsigned last_generation = _vehicle_imu_ai_sub.get_last_generation();
-			vehicle_imu_ai_s imu;
-			imu_updated = _vehicle_imu_ai_sub.update(&imu);
+        switch (_imu_source) {
+        case ImuSource::VehicleImuAi: {
+                const unsigned last_generation = _vehicle_imu_ai_sub.get_last_generation();
+                vehicle_imu_ai_s imu;
+                imu_updated = _vehicle_imu_ai_sub.update(&imu);
 
-			if (imu_updated && (_vehicle_imu_ai_sub.get_last_generation() != last_generation + 1)) {
-				perf_count(_msg_missed_imu_perf);
-			}
+                if (imu_updated && (_vehicle_imu_ai_sub.get_last_generation() != last_generation + 1)) {
+                        perf_count(_msg_missed_imu_perf);
+                }
 
-			if (imu_updated) {
-				imu_sample_new.time_us = imu.timestamp_sample;
-			imu_sample_new.delta_ang_dt = imu.delta_angle_dt;
-                                imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-			imu_sample_new.delta_vel_dt = imu.delta_velocity_dt;
-                                imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+                if (imu_updated) {
+                        imu_sample_new.time_us = imu.timestamp_sample;
+                        imu_sample_new.delta_ang_dt = imu.delta_angle_dt;
+                        imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
+                        imu_sample_new.delta_vel_dt = imu.delta_velocity_dt;
+                        imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
 
-				if (imu.delta_velocity_clipping > 0) {
-					imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
-					imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Y;
-					imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
-				}
+                        if (imu.delta_velocity_clipping > 0) {
+                                imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
+                                imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Y;
+                                imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
+                        }
 
-			imu_dt = (hrt_abstime)(imu.delta_angle_dt * 1.e6f);
+                        imu_dt = hrt_abstime(imu.delta_angle_dt * 1.e6f);
 
-				if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
-					_device_id_accel = imu.accel_device_id;
-					_device_id_gyro = imu.gyro_device_id;
-					_accel_calibration_count = imu.accel_calibration_count;
-					_gyro_calibration_count = imu.gyro_calibration_count;
+                        if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
+                                _device_id_accel = imu.accel_device_id;
+                                _device_id_gyro = imu.gyro_device_id;
+                                _accel_calibration_count = imu.accel_calibration_count;
+                                _gyro_calibration_count = imu.gyro_calibration_count;
 
-				} else {
-					if ((imu.accel_calibration_count != _accel_calibration_count)
-					    || (imu.accel_device_id != _device_id_accel)) {
+                        } else {
+                                if ((imu.accel_calibration_count != _accel_calibration_count)
+                                    || (imu.accel_device_id != _device_id_accel)) {
 
-						PX4_DEBUG("%d - resetting accelerometer bias", _instance);
-						_device_id_accel = imu.accel_device_id;
+                                        PX4_DEBUG("%d - resetting accelerometer bias", _instance);
+                                        _device_id_accel = imu.accel_device_id;
 
-						_ekf.resetAccelBias();
-						_accel_calibration_count = imu.accel_calibration_count;
+                                        _ekf.resetAccelBias();
+                                        _accel_calibration_count = imu.accel_calibration_count;
 
-						// reset bias learning
-						_accel_cal = {};
-					}
+                                        // reset bias learning
+                                        _accel_cal = {};
+                                }
 
-					if ((imu.gyro_calibration_count != _gyro_calibration_count)
-					    || (imu.gyro_device_id != _device_id_gyro)) {
+                                if ((imu.gyro_calibration_count != _gyro_calibration_count)
+                                    || (imu.gyro_device_id != _device_id_gyro)) {
 
-						PX4_DEBUG("%d - resetting rate gyro bias", _instance);
-						_device_id_gyro = imu.gyro_device_id;
+                                        PX4_DEBUG("%d - resetting rate gyro bias", _instance);
+                                        _device_id_gyro = imu.gyro_device_id;
 
-						_ekf.resetGyroBias();
-						_gyro_calibration_count = imu.gyro_calibration_count;
+                                        _ekf.resetGyroBias();
+                                        _gyro_calibration_count = imu.gyro_calibration_count;
 
-						// reset bias learning
-						_gyro_cal = {};
-					}
-				}
-			}
-		} else {
-			// Use raw IMU data (default)
-			const unsigned last_generation = _vehicle_imu_sub.get_last_generation();
-			vehicle_imu_s imu;
-			imu_updated = _vehicle_imu_sub.update(&imu);
+                                        // reset bias learning
+                                        _gyro_cal = {};
+                                }
+                        }
+                }
+                break;
+        }
 
-			if (imu_updated && (_vehicle_imu_sub.get_last_generation() != last_generation + 1)) {
-				perf_count(_msg_missed_imu_perf);
-			}
+        case ImuSource::VehicleImu: {
+                const unsigned last_generation = _vehicle_imu_sub.get_last_generation();
+                vehicle_imu_s imu;
+                imu_updated = _vehicle_imu_sub.update(&imu);
 
-			if (imu_updated) {
-				imu_sample_new.time_us = imu.timestamp_sample;
-				imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
-				imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-				imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
-				imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+                if (imu_updated && (_vehicle_imu_sub.get_last_generation() != last_generation + 1)) {
+                        perf_count(_msg_missed_imu_perf);
+                }
 
-				if (imu.delta_velocity_clipping > 0) {
-					imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_X;
-					imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Y;
-					imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Z;
-				}
+                if (imu_updated) {
+                        imu_sample_new.time_us = imu.timestamp_sample;
+                        imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
+                        imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
+                        imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
+                        imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
 
-				imu_dt = imu.delta_angle_dt;
+                        if (imu.delta_velocity_clipping > 0) {
+                                imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_X;
+                                imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Y;
+                                imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Z;
+                        }
 
-				if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
-					_device_id_accel = imu.accel_device_id;
-					_device_id_gyro = imu.gyro_device_id;
-					_accel_calibration_count = imu.accel_calibration_count;
-					_gyro_calibration_count = imu.gyro_calibration_count;
+                        imu_dt = imu.delta_angle_dt;
 
-				} else {
-					if ((imu.accel_calibration_count != _accel_calibration_count)
-					    || (imu.accel_device_id != _device_id_accel)) {
+                        if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
+                                _device_id_accel = imu.accel_device_id;
+                                _device_id_gyro = imu.gyro_device_id;
+                                _accel_calibration_count = imu.accel_calibration_count;
+                                _gyro_calibration_count = imu.gyro_calibration_count;
 
-						PX4_DEBUG("%d - resetting accelerometer bias", _instance);
-						_device_id_accel = imu.accel_device_id;
+                        } else {
+                                if ((imu.accel_calibration_count != _accel_calibration_count)
+                                    || (imu.accel_device_id != _device_id_accel)) {
 
-						_ekf.resetAccelBias();
-						_accel_calibration_count = imu.accel_calibration_count;
+                                        PX4_DEBUG("%d - resetting accelerometer bias", _instance);
+                                        _device_id_accel = imu.accel_device_id;
 
-						// reset bias learning
-					_accel_cal = {};
-				}
+                                        _ekf.resetAccelBias();
+                                        _accel_calibration_count = imu.accel_calibration_count;
 
-				if ((imu.gyro_calibration_count != _gyro_calibration_count)
-				    || (imu.gyro_device_id != _device_id_gyro)) {
+                                        // reset bias learning
+                                        _accel_cal = {};
+                                }
 
-					PX4_DEBUG("%d - resetting rate gyro bias", _instance);
-					_device_id_gyro = imu.gyro_device_id;
+                                if ((imu.gyro_calibration_count != _gyro_calibration_count)
+                                    || (imu.gyro_device_id != _device_id_gyro)) {
 
-					_ekf.resetGyroBias();
-					_gyro_calibration_count = imu.gyro_calibration_count;
+                                        PX4_DEBUG("%d - resetting rate gyro bias", _instance);
+                                        _device_id_gyro = imu.gyro_device_id;
 
-					// reset bias learning
-					_gyro_cal = {};
-				}
-			}
-		}
-		}
+                                        _ekf.resetGyroBias();
+                                        _gyro_calibration_count = imu.gyro_calibration_count;
 
-	} else {
-		const unsigned last_generation = _sensor_combined_sub.get_last_generation();
-		sensor_combined_s sensor_combined;
-		imu_updated = _sensor_combined_sub.update(&sensor_combined);
+                                        // reset bias learning
+                                        _gyro_cal = {};
+                                }
+                        }
+                }
+                break;
+        }
 
-		if (imu_updated && (_sensor_combined_sub.get_last_generation() != last_generation + 1)) {
-			perf_count(_msg_missed_imu_perf);
-		}
+        case ImuSource::SensorCombined:
+        default: {
+                const unsigned last_generation = _sensor_combined_sub.get_last_generation();
+                sensor_combined_s sensor_combined;
+                imu_updated = _sensor_combined_sub.update(&sensor_combined);
 
-		if (imu_updated) {
-			imu_sample_new.time_us = sensor_combined.timestamp;
-			imu_sample_new.delta_ang_dt = sensor_combined.gyro_integral_dt * 1.e-6f;
-			imu_sample_new.delta_ang = Vector3f{sensor_combined.gyro_rad} * imu_sample_new.delta_ang_dt;
-			imu_sample_new.delta_vel_dt = sensor_combined.accelerometer_integral_dt * 1.e-6f;
-			imu_sample_new.delta_vel = Vector3f{sensor_combined.accelerometer_m_s2} * imu_sample_new.delta_vel_dt;
+                if (imu_updated && (_sensor_combined_sub.get_last_generation() != last_generation + 1)) {
+                        perf_count(_msg_missed_imu_perf);
+                }
 
-			if (sensor_combined.accelerometer_clipping > 0) {
-				imu_sample_new.delta_vel_clipping[0] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_X;
-				imu_sample_new.delta_vel_clipping[1] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Y;
-				imu_sample_new.delta_vel_clipping[2] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Z;
-			}
+                if (imu_updated) {
+                        imu_sample_new.time_us = sensor_combined.timestamp;
+                        imu_sample_new.delta_ang_dt = sensor_combined.gyro_integral_dt * 1.e-6f;
+                        imu_sample_new.delta_ang = Vector3f{sensor_combined.gyro_rad} * imu_sample_new.delta_ang_dt;
+                        imu_sample_new.delta_vel_dt = sensor_combined.accelerometer_integral_dt * 1.e-6f;
+                        imu_sample_new.delta_vel = Vector3f{sensor_combined.accelerometer_m_s2} * imu_sample_new.delta_vel_dt;
 
-			imu_dt = sensor_combined.gyro_integral_dt;
+                        if (sensor_combined.accelerometer_clipping > 0) {
+                                imu_sample_new.delta_vel_clipping[0] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_X;
+                                imu_sample_new.delta_vel_clipping[1] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Y;
+                                imu_sample_new.delta_vel_clipping[2] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Z;
+                        }
 
-			if (sensor_combined.accel_calibration_count != _accel_calibration_count) {
+                        imu_dt = sensor_combined.gyro_integral_dt;
 
-				PX4_DEBUG("%d - resetting accelerometer bias", _instance);
+                        if (sensor_combined.accel_calibration_count != _accel_calibration_count) {
 
-				_ekf.resetAccelBias();
-				_accel_calibration_count = sensor_combined.accel_calibration_count;
+                                PX4_DEBUG("%d - resetting accelerometer bias", _instance);
 
-				// reset bias learning
-				_accel_cal = {};
-			}
+                                _ekf.resetAccelBias();
+                                _accel_calibration_count = sensor_combined.accel_calibration_count;
 
-			if (sensor_combined.gyro_calibration_count != _gyro_calibration_count) {
+                                // reset bias learning
+                                _accel_cal = {};
+                        }
 
-				PX4_DEBUG("%d - resetting rate gyro bias", _instance);
+                        if (sensor_combined.gyro_calibration_count != _gyro_calibration_count) {
 
-				_ekf.resetGyroBias();
-				_gyro_calibration_count = sensor_combined.gyro_calibration_count;
+                                PX4_DEBUG("%d - resetting rate gyro bias", _instance);
 
-				// reset bias learning
-				_gyro_cal = {};
-			}
-		}
+                                _ekf.resetGyroBias();
+                                _gyro_calibration_count = sensor_combined.gyro_calibration_count;
 
-		if (_sensor_selection_sub.updated() || (_device_id_accel == 0 || _device_id_gyro == 0)) {
-			sensor_selection_s sensor_selection;
+                                // reset bias learning
+                                _gyro_cal = {};
+                        }
+                }
 
-			if (_sensor_selection_sub.copy(&sensor_selection)) {
-				if (_device_id_accel != sensor_selection.accel_device_id) {
+                if (_sensor_selection_sub.updated() || (_device_id_accel == 0 || _device_id_gyro == 0)) {
+                        sensor_selection_s sensor_selection;
 
-					_device_id_accel = sensor_selection.accel_device_id;
+                        if (_sensor_selection_sub.copy(&sensor_selection)) {
+                                if (_device_id_accel != sensor_selection.accel_device_id) {
 
-					_ekf.resetAccelBias();
+                                        _device_id_accel = sensor_selection.accel_device_id;
 
-					// reset bias learning
-					_accel_cal = {};
-				}
+                                        _ekf.resetAccelBias();
 
-				if (_device_id_gyro != sensor_selection.gyro_device_id) {
+                                        // reset bias learning
+                                        _accel_cal = {};
+                                }
 
-					_device_id_gyro = sensor_selection.gyro_device_id;
+                                if (_device_id_gyro != sensor_selection.gyro_device_id) {
 
-					_ekf.resetGyroBias();
+                                        _device_id_gyro = sensor_selection.gyro_device_id;
 
-					// reset bias learning
-					_gyro_cal = {};
-				}
-			}
-		}
-	}
+                                        _ekf.resetGyroBias();
+
+                                        // reset bias learning
+                                        _gyro_cal = {};
+                                }
+                        }
+                }
+                break;
+        }
+        }
 
 	if (imu_updated) {
 		const hrt_abstime now = imu_sample_new.time_us;

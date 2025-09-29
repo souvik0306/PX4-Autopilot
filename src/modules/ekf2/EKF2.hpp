@@ -260,15 +260,22 @@ private:
 	uORB::Subscription _vehicle_gps_position_sub{ORB_ID(vehicle_gps_position)};
 	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
 
-	uORB::SubscriptionCallbackWorkItem _sensor_combined_sub{this, ORB_ID(sensor_combined)};
-	uORB::SubscriptionCallbackWorkItem _vehicle_imu_sub{this, ORB_ID(vehicle_imu)};
-	uORB::SubscriptionCallbackWorkItem _vehicle_imu_ai_sub{this, ORB_ID(vehicle_imu_ai)};
+       enum class ImuSource : uint8_t {
+               SensorCombined,
+               VehicleImu,
+               VehicleImuAi,
+       };
+
+       uORB::SubscriptionCallbackWorkItem _sensor_combined_sub{this, ORB_ID(sensor_combined)};
+       uORB::SubscriptionCallbackWorkItem _vehicle_imu_sub{this, ORB_ID(vehicle_imu)};
+       uORB::SubscriptionCallbackWorkItem _vehicle_imu_ai_sub{this, ORB_ID(vehicle_imu_ai)};
 
 	uORB::SubscriptionMultiArray<distance_sensor_s> _distance_sensor_subs{ORB_ID::distance_sensor};
 	int _distance_sensor_selected{-1}; // because we can have several distance sensor instances with different orientations
 	unsigned _distance_sensor_last_generation{0};
 
-	bool _callback_registered{false};
+       bool _callback_registered{false};
+       ImuSource _imu_source{ImuSource::SensorCombined};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};
@@ -313,6 +320,7 @@ private:
 	Ekf _ekf;
 
 	parameters *_params;	///< pointer to ekf parameter struct (located in _ekf class instance)
+	uORB::SubscriptionCallbackWorkItem *imuCallbackSubscription(ImuSource source);
 
 	DEFINE_PARAMETERS(
 		(ParamExtInt<px4::params::EKF2_PREDICT_US>) _param_ekf2_predict_us,
