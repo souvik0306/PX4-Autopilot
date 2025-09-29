@@ -1,7 +1,25 @@
 #!/bin/bash
 
 SESSION="px4_sim"
-PX4_ROOT="${PX4_ROOT:-$HOME/Downloads/gestelt_ws/PX4-Autopilot}"
+
+# Resolve the PX4 workspace location. Prefer an explicitly provided PX4_ROOT,
+# otherwise probe a list of common checkouts so the script "just works" on
+# both ~/gestelt_ws and ~/Downloads/gestelt_ws layouts.
+if [ -z "${PX4_ROOT:-}" ]; then
+    for candidate in "$HOME/gestelt_ws/PX4-Autopilot" \
+                     "$HOME/Downloads/gestelt_ws/PX4-Autopilot"; do
+        if [ -d "$candidate" ]; then
+            PX4_ROOT="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "${PX4_ROOT:-}" ]; then
+    echo "[launch_px4_souvik] ERROR: Unable to locate PX4 checkout. Set PX4_ROOT before running." >&2
+    exit 1
+fi
+
 PX4_LAUNCH_CMD="${PX4_LAUNCH_CMD:-make px4_sitl gazebo}"
 IMU_BRIDGE_PORT="${IMU_BRIDGE_PORT:-14561}"
 
@@ -24,7 +42,8 @@ tmux send-keys -t "$SESSION":0.1 "imu_ai_bridge start -p $IMU_BRIDGE_PORT" C-m
 # Optionally switch EKF2 to AI source after the stream should be alive.
 # Assumes EKF2_IMU_SRC exists in your build. Comment these if you prefer manual switch.
 # Note: Avoid auto-switching EKF2 to prevent poll timeouts while EKF2 is stopped.
-# After confirming 'listener vehicle_imu_ai 5' shows updates, run manually in pxh>:
+# After confirming 'listener vehicle_imu_ai 5' shows updates, run manually in
+# the px4 console (pxh>):
 #   param set EKF2_IMU_SRC 1; ekf2 stop; ekf2 start; ekf2 status
 
 # Pane 2: MAVROS launch (split below PX4 SITL)
