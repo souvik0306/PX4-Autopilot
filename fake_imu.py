@@ -32,7 +32,7 @@ class AIDeltaSender:
     def __init__(self):
         # Params
         self.udp_host = rospy.get_param('~udp_host', '127.0.0.1')
-        self.udp_port = int(rospy.get_param('~udp_port', 14561))
+        self.udp_port = int(rospy.get_param('~udp_port', 14560))
         self.alpha = float(rospy.get_param('~alpha', 0.2))  # LPF coefficient [0..1]
         self.max_dt = float(rospy.get_param('~max_dt', 0.02 * 2))  # cap dt to 2x nominal 200 Hz
         self.min_dt = float(rospy.get_param('~min_dt', 1e-4))

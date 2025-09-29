@@ -69,7 +69,7 @@ public:
 private:
         static constexpr uint16_t kListenPort{14560};
 
-        struct PX4_PACKED VehicleImuAiWire
+        struct PX4_PACKED VehicleImuAiWireV0
         {
                 uint64_t timestamp;
                 uint64_t timestamp_sample;
@@ -83,6 +83,28 @@ private:
                 uint8_t accel_calibration_count;
                 uint8_t gyro_calibration_count;
         };
+
+        struct PX4_PACKED VehicleImuAiWireV1
+        {
+                uint64_t timestamp;
+                uint64_t timestamp_sample;
+                uint32_t accel_device_id;
+                uint32_t gyro_device_id;
+                float delta_angle[3];
+                float delta_velocity[3];
+                float delta_angle_dt;
+                float delta_velocity_dt;
+                uint8_t delta_angle_clipping;
+                uint8_t delta_velocity_clipping;
+                uint8_t accel_calibration_count;
+                uint8_t gyro_calibration_count;
+        };
+
+        static constexpr size_t kWireSizeV0{sizeof(VehicleImuAiWireV0)};
+        static constexpr size_t kWireSizeV1{sizeof(VehicleImuAiWireV1)};
+        static constexpr size_t kMaxWireSize{(kWireSizeV0 > kWireSizeV1) ? kWireSizeV0 : kWireSizeV1};
+
+        bool populateMessageFromWire(vehicle_imu_ai_s &msg, const uint8_t *buffer, size_t length);
 };
 
 int ImuAIBridge::task_spawn(int argc, char *argv[])
@@ -103,7 +125,7 @@ int ImuAIBridge::task_spawn(int argc, char *argv[])
 int ImuAIBridge::run()
 {
         vehicle_imu_ai_s msg{};
-        std::array<uint8_t, sizeof(VehicleImuAiWire)> rx_buffer{};
+        std::array<uint8_t, kMaxWireSize> rx_buffer{};
 
         const int sock = ::socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -138,31 +160,21 @@ int ImuAIBridge::run()
                         continue;
                 }
 
-                if (bytes != static_cast<ssize_t>(rx_buffer.size())) {
+                if (!populateMessageFromWire(msg, rx_buffer.data(), static_cast<size_t>(bytes))) {
                         if (hrt_elapsed_time(&last_size_warn_us) > 1_s) {
-                                PX4_WARN("discarded imu_ai packet with size %zd (expected %zu)", bytes,
-                                         rx_buffer.size());
+                                PX4_WARN("discarded imu_ai packet with size %zd (expected %zu or %zu)", bytes,
+                                         kWireSizeV1, kWireSizeV0);
                                 last_size_warn_us = hrt_absolute_time();
                         }
 
                         continue;
                 }
 
-                VehicleImuAiWire wire{};
-                std::memcpy(&wire, rx_buffer.data(), sizeof(wire));
-
-                msg = {};
                 msg.timestamp = hrt_absolute_time();
-                msg.timestamp_sample = wire.timestamp_sample;
-                msg.accel_device_id = wire.accel_device_id;
-                msg.gyro_device_id = wire.gyro_device_id;
-                std::memcpy(msg.delta_angle, wire.delta_angle, sizeof(msg.delta_angle));
-                std::memcpy(msg.delta_velocity, wire.delta_velocity, sizeof(msg.delta_velocity));
-                msg.delta_angle_dt = wire.delta_angle_dt;
-                msg.delta_velocity_dt = wire.delta_velocity_dt;
-                msg.delta_velocity_clipping = wire.delta_velocity_clipping;
-                msg.accel_calibration_count = wire.accel_calibration_count;
-                msg.gyro_calibration_count = wire.gyro_calibration_count;
+
+                if (msg.timestamp_sample == 0) {
+                        msg.timestamp_sample = msg.timestamp;
+                }
 
                 if (!pub) {
                         pub = orb_advertise(ORB_ID(vehicle_imu_ai), &msg);
@@ -180,6 +192,61 @@ int ImuAIBridge::run()
         return PX4_OK;
 }
 
+bool ImuAIBridge::populateMessageFromWire(vehicle_imu_ai_s &msg, const uint8_t *buffer, size_t length)
+{
+        msg = {};
+
+        if (length == kWireSizeV1) {
+                VehicleImuAiWireV1 wire{};
+                std::memcpy(&wire, buffer, sizeof(VehicleImuAiWireV1));
+
+                const uint64_t timestamp_sample = (wire.timestamp_sample != 0) ? wire.timestamp_sample : wire.timestamp;
+
+                msg.timestamp_sample = timestamp_sample;
+                msg.accel_device_id = wire.accel_device_id;
+                msg.gyro_device_id = wire.gyro_device_id;
+                std::memcpy(msg.delta_angle, wire.delta_angle, sizeof(msg.delta_angle));
+                std::memcpy(msg.delta_velocity, wire.delta_velocity, sizeof(msg.delta_velocity));
+                msg.delta_angle_dt = wire.delta_angle_dt;
+                msg.delta_velocity_dt = wire.delta_velocity_dt;
+                msg.delta_angle_clipping = wire.delta_angle_clipping;
+                msg.delta_velocity_clipping = wire.delta_velocity_clipping;
+                msg.accel_calibration_count = wire.accel_calibration_count;
+                msg.gyro_calibration_count = wire.gyro_calibration_count;
+
+                return true;
+
+        } else if (length == kWireSizeV0) {
+                VehicleImuAiWireV0 wire{};
+                std::memcpy(&wire, buffer, sizeof(VehicleImuAiWireV0));
+
+                static hrt_abstime last_v0_warn_us = 0;
+
+                if (hrt_elapsed_time(&last_v0_warn_us) > 5_s) {
+                        PX4_WARN("received legacy imu_ai packet layout (uint16 *_dt); please update sender to floats");
+                        last_v0_warn_us = hrt_absolute_time();
+                }
+
+                const uint64_t timestamp_sample = (wire.timestamp_sample != 0) ? wire.timestamp_sample : wire.timestamp;
+
+                msg.timestamp_sample = timestamp_sample;
+                msg.accel_device_id = wire.accel_device_id;
+                msg.gyro_device_id = wire.gyro_device_id;
+                std::memcpy(msg.delta_angle, wire.delta_angle, sizeof(msg.delta_angle));
+                std::memcpy(msg.delta_velocity, wire.delta_velocity, sizeof(msg.delta_velocity));
+                msg.delta_angle_dt = static_cast<float>(wire.delta_angle_dt) * 1.e-6f;
+                msg.delta_velocity_dt = static_cast<float>(wire.delta_velocity_dt) * 1.e-6f;
+                msg.delta_angle_clipping = 0;
+                msg.delta_velocity_clipping = wire.delta_velocity_clipping;
+                msg.accel_calibration_count = wire.accel_calibration_count;
+                msg.gyro_calibration_count = wire.gyro_calibration_count;
+
+                return true;
+        }
+
+        return false;
+}
+
 int ImuAIBridge::print_usage(const char *reason)
 {
         if (reason) {
@@ -191,7 +258,7 @@ int ImuAIBridge::print_usage(const char *reason)
 ### Description
 
 Listens for AI-processed IMU samples on UDP port 14560 and republishes
-then on the vehicle_imu_ai topic.
+them on the vehicle_imu_ai topic.
 
 )DESCR_STR");
 

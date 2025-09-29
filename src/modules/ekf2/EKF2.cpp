@@ -405,20 +405,29 @@ void EKF2::Run()
 				perf_count(_msg_missed_imu_perf);
 			}
 
-			if (imu_updated) {
-				imu_sample_new.time_us = imu.timestamp_sample;
-				imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
-				imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-				imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
-				imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+                        if (imu_updated) {
+                                const float delta_angle_dt = (imu.delta_angle_dt > 0.f) ? imu.delta_angle_dt : 0.f;
+                                const float delta_velocity_dt = (imu.delta_velocity_dt > 0.f) ? imu.delta_velocity_dt : 0.f;
 
-				if (imu.delta_velocity_clipping > 0) {
-					imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
-					imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Y;
-					imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
-				}
+                                imu_sample_new.time_us = imu.timestamp_sample;
+                                imu_sample_new.delta_ang_dt = delta_angle_dt;
+                                imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
+                                imu_sample_new.delta_vel_dt = delta_velocity_dt;
+                                imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
 
-				imu_dt = imu.delta_angle_dt;
+                                if (imu.delta_angle_clipping > 0) {
+                                        imu_sample_new.delta_vel_clipping[0] |= imu.delta_angle_clipping & vehicle_imu_ai_s::CLIPPING_X;
+                                        imu_sample_new.delta_vel_clipping[1] |= imu.delta_angle_clipping & vehicle_imu_ai_s::CLIPPING_Y;
+                                        imu_sample_new.delta_vel_clipping[2] |= imu.delta_angle_clipping & vehicle_imu_ai_s::CLIPPING_Z;
+                                }
+
+                                if (imu.delta_velocity_clipping > 0) {
+                                        imu_sample_new.delta_vel_clipping[0] |= imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
+                                        imu_sample_new.delta_vel_clipping[1] |= imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Y;
+                                        imu_sample_new.delta_vel_clipping[2] |= imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
+                                }
+
+                                imu_dt = static_cast<hrt_abstime>(delta_angle_dt * 1.e6f);
 
 				if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
 					_device_id_accel = imu.accel_device_id;
