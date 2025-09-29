@@ -1,0 +1,12 @@
+menuconfig MODULES_IMU_AI_BRIDGE
+	bool "imu_ai_bridge"
+	default y
+	---help---
+		Enable support for imu_ai_bridge module (UDP -> vehicle_imu_ai)
+
+menuconfig USER_IMU_AI_BRIDGE
+	bool "imu_ai_bridge running as userspace module"
+	default y
+	depends on BOARD_PROTECTED && MODULES_IMU_AI_BRIDGE
+	---help---
+		Put imu_ai_bridge in userspace memory

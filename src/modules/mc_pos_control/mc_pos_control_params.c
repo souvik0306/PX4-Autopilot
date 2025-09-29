@@ -162,6 +162,34 @@ PARAM_DEFINE_FLOAT(MPC_MANTHR_MIN, 0.08f);
 PARAM_DEFINE_FLOAT(MPC_Z_P, 1.0f);
 
 /**
+ * RPT controller natural frequency: default value is 0.5
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_Z_WN, 0.5f);
+
+/**
+ * RPT controller damping ratio: default value is 1.1*1.5
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_Z_SIGMA, 1.65f); //1.1 * 1.5
+
+/**
+ * RPT controller pole placement: default value is 0.8*1.5
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_Z_KI, 1.2f); //0.8*1.5
+
+/**
+ * RPT controller settling time: default value is 0.3
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_Z_EPS, 0.3f);
+
+/**
  * Proportional gain for vertical velocity error
  *
  * defined as correction acceleration in m/s^2 per m/s velocity error
@@ -268,6 +296,62 @@ PARAM_DEFINE_FLOAT(MPC_Z_VEL_MAX_DN, 1.f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_FLOAT(MPC_XY_P, 0.95f);
+
+
+/**
+ * RPT controller natural frequency: default value is 0.4
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_XY_WN, 0.4f);
+
+/**
+ * RPT controller damping ratio: default value is 1.1*1.5
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_XY_SIGMA, 1.65f); //1.1 * 1.5
+
+/**
+ * RPT controller pole placement: default value is 0.8*1.5
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_XY_KI, 1.2f); //0.8*1.5
+
+/**
+ * RPT controller settling time: default value is 0.4
+ * @decimal 2
+ *
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_XY_EPS, 0.4f);
+
+
+/**
+ * RPT controller XY integration limit: default value is 0.5
+ * @decimal 2
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_XY_MAX_I,0.5f);
+
+
+/**
+ * RPT controller rotor drag X default value is 0.0
+ * @decimal 2
+ */
+
+PARAM_DEFINE_FLOAT(MPC_RPT_R_DRAG_X,0.0f);
+/**
+ * RPT controller rotor drag Y default value is 0.0
+ * @decimal 2
+ */
+
+PARAM_DEFINE_FLOAT(MPC_RPT_R_DRAG_Y,0.0f);
+/**
+ * RPT controller rotor drag Z default value is 0.0
+ * @decimal 2
+ */
+PARAM_DEFINE_FLOAT(MPC_RPT_R_DRAG_Z,0.0f);
+
 
 /**
  * Proportional gain for horizontal velocity error

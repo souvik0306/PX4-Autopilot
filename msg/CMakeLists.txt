@@ -187,6 +187,7 @@ set(msg_files
 	vehicle_global_position.msg
 	vehicle_gps_position.msg
 	vehicle_imu.msg
+	vehicle_imu_ai.msg
 	vehicle_imu_status.msg
 	vehicle_land_detected.msg
 	vehicle_local_position.msg
