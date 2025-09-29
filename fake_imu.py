@@ -2,9 +2,10 @@
 """
 UDP delta sender for PX4 imu_ai_bridge.
 
-Subscribes to /mavros/imu/data, applies simple low-pass denoising,
-computes integrated deltas and sends a packed struct compatible with
-vehicle_imu_ai over UDP to the PX4 bridge.
+Subscribes to /mavros/imu/data (ENU frame), applies simple low-pass
+denoising, converts the vectors to the FRD body frame required by
+vehicle_imu_ai, then sends the packed struct over UDP to the PX4
+bridge.
 
 Struct layout (little-endian) matching vehicle_imu_ai.msg:
     uint64  timestamp
@@ -13,8 +14,8 @@ Struct layout (little-endian) matching vehicle_imu_ai.msg:
     uint32  gyro_device_id
     float32[3] delta_angle
     float32[3] delta_velocity
-    uint16  delta_angle_dt           # microseconds
-    uint16  delta_velocity_dt        # microseconds
+    float32 delta_angle_dt           # seconds
+    float32 delta_velocity_dt        # seconds
     uint8   delta_velocity_clipping
     uint8   accel_calibration_count
     uint8   gyro_calibration_count
@@ -36,6 +37,10 @@ class AIDeltaSender:
         self.max_dt = float(rospy.get_param('~max_dt', 0.02 * 2))  # cap dt to 2x nominal 200 Hz
         self.min_dt = float(rospy.get_param('~min_dt', 1e-4))
 
+        # Device IDs so EKF2 can distinguish synthetic AI data from raw IMU
+        self.accel_device_id = int(rospy.get_param('~accel_device_id', 0xA14ACC01))
+        self.gyro_device_id = int(rospy.get_param('~gyro_device_id', 0xA14A7701))
+
         # Optional static biases (remove if already compensated upstream)
         self.gyro_bias = rospy.get_param('~gyro_bias', [0.0, 0.0, 0.0])
         self.accel_bias = rospy.get_param('~accel_bias', [0.0, 0.0, 0.0])
@@ -52,20 +57,42 @@ class AIDeltaSender:
         self.start_time = rospy.Time.now().to_sec()
 
         rospy.Subscriber('/mavros/imu/data', Imu, self.on_imu)
-        rospy.loginfo(f"[ai_delta_sender] UDP -> {self.udp_host}:{self.udp_port}, alpha={self.alpha}")
+        rospy.loginfo(
+            "[ai_delta_sender] UDP -> %s:%d, alpha=%.3f, accel_id=0x%08X, gyro_id=0x%08X",
+            self.udp_host,
+            self.udp_port,
+            self.alpha,
+            self.accel_device_id,
+            self.gyro_device_id,
+        )
 
     @staticmethod
     def _clamp(x, lo, hi):
         return max(lo, min(hi, x))
+
+    @staticmethod
+    def _enu_to_frd(vec):
+        """Convert a vector expressed in ENU to PX4's FRD body frame."""
+        return [vec[1], vec[0], -vec[2]]
 
     def on_imu(self, imu: Imu):
         # Time handling
         stamp = imu.header.stamp.to_sec() if imu.header.stamp and imu.header.stamp.to_sec() > 0 else rospy.Time.now().to_sec()
         if self.last_stamp is None:
             self.last_stamp = stamp
-            # Initialize filters with first sample
-            self.filt_gyro = [imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z]
-            self.filt_accel = [imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z]
+            # Initialize filters with first sample (converted to FRD)
+            first_gyro = self._enu_to_frd([
+                imu.angular_velocity.x,
+                imu.angular_velocity.y,
+                imu.angular_velocity.z,
+            ])
+            first_accel = self._enu_to_frd([
+                imu.linear_acceleration.x,
+                imu.linear_acceleration.y,
+                imu.linear_acceleration.z,
+            ])
+            self.filt_gyro = first_gyro
+            self.filt_accel = first_accel
             return
 
         dt = stamp - self.last_stamp
@@ -73,12 +100,20 @@ class AIDeltaSender:
         dt = self._clamp(dt, self.min_dt, self.max_dt)
 
         # Raw values with bias removal
-        g = [imu.angular_velocity.x - self.gyro_bias[0],
-             imu.angular_velocity.y - self.gyro_bias[1],
-             imu.angular_velocity.z - self.gyro_bias[2]]
-        a = [imu.linear_acceleration.x - self.accel_bias[0],
-             imu.linear_acceleration.y - self.accel_bias[1],
-             imu.linear_acceleration.z - self.accel_bias[2]]
+        g_enu = [
+            imu.angular_velocity.x - self.gyro_bias[0],
+            imu.angular_velocity.y - self.gyro_bias[1],
+            imu.angular_velocity.z - self.gyro_bias[2],
+        ]
+        a_enu = [
+            imu.linear_acceleration.x - self.accel_bias[0],
+            imu.linear_acceleration.y - self.accel_bias[1],
+            imu.linear_acceleration.z - self.accel_bias[2],
+        ]
+
+        # Convert to FRD (Forward, Right, Down)
+        g = self._enu_to_frd(g_enu)
+        a = self._enu_to_frd(a_enu)
 
         # First-order low-pass filter
         alp = self.alpha
@@ -97,18 +132,16 @@ class AIDeltaSender:
         # Pack struct
         now_us = int(rospy.Time.now().to_sec() * 1e6)
         timestamp_us = now_us
-        timestamp_sample = now_us
-        accel_device_id = 0
-        gyro_device_id = 0
-        # dt in microseconds as uint16 (saturate to 65535us)
-        dt_us = int(max(0, min(int(dt * 1e6), 65535)))
-        delta_angle_dt = dt_us
-        delta_velocity_dt = dt_us
+        timestamp_sample = int(stamp * 1e6)
+        accel_device_id = self.accel_device_id
+        gyro_device_id = self.gyro_device_id
+        delta_angle_dt = float(dt)
+        delta_velocity_dt = float(dt)
         delta_velocity_clipping = 0
         accel_calibration_count = 0
         gyro_calibration_count = 0
 
-        fmt = '<QQII3f3fHHBBB'
+        fmt = '<QQII3f3fffBBB'
         payload = struct.pack(
             fmt,
             timestamp_us,
