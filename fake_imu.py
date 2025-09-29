@@ -14,8 +14,8 @@ Struct layout (little-endian) matching vehicle_imu_ai.msg:
     uint32  gyro_device_id
     float32[3] delta_angle
     float32[3] delta_velocity
-    float32 delta_angle_dt           # seconds
-    float32 delta_velocity_dt        # seconds
+    uint16  delta_angle_dt           # microseconds
+    uint16  delta_velocity_dt        # microseconds
     uint8   delta_velocity_clipping
     uint8   accel_calibration_count
     uint8   gyro_calibration_count
@@ -23,7 +23,6 @@ Struct layout (little-endian) matching vehicle_imu_ai.msg:
 
 import socket
 import struct
-import math
 import rospy
 from sensor_msgs.msg import Imu
 
@@ -135,13 +134,17 @@ class AIDeltaSender:
         timestamp_sample = int(stamp * 1e6)
         accel_device_id = self.accel_device_id
         gyro_device_id = self.gyro_device_id
-        delta_angle_dt = float(dt)
-        delta_velocity_dt = float(dt)
+        delta_angle_dt = int(round(dt * 1e6))
+        delta_velocity_dt = int(round(dt * 1e6))
+
+        # Saturate to uint16 representable range (approx. 65 ms)
+        delta_angle_dt = max(0, min(0xFFFF, delta_angle_dt))
+        delta_velocity_dt = max(0, min(0xFFFF, delta_velocity_dt))
         delta_velocity_clipping = 0
         accel_calibration_count = 0
         gyro_calibration_count = 0
 
-        fmt = '<QQII3f3fffBBB'
+        fmt = '<QQII3f3fHHBBB'
         payload = struct.pack(
             fmt,
             timestamp_us,

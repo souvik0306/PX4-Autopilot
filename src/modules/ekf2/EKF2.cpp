@@ -419,9 +419,9 @@ void EKF2::Run()
 
                 if (imu_updated) {
                         imu_sample_new.time_us = imu.timestamp_sample;
-                        imu_sample_new.delta_ang_dt = imu.delta_angle_dt;
+                        imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
                         imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-                        imu_sample_new.delta_vel_dt = imu.delta_velocity_dt;
+                        imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
                         imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
 
                         if (imu.delta_velocity_clipping > 0) {
@@ -430,7 +430,7 @@ void EKF2::Run()
                                 imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
                         }
 
-                        imu_dt = hrt_abstime(imu.delta_angle_dt * 1.e6f);
+                        imu_dt = imu.delta_angle_dt;
 
                         if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
                                 _device_id_accel = imu.accel_device_id;
