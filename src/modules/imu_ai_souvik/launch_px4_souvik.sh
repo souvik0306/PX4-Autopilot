@@ -39,11 +39,12 @@ sleep 8
 tmux send-keys -t "$SESSION":0.1 C-m
 tmux send-keys -t "$SESSION":0.1 "imu_ai_bridge start -p $IMU_BRIDGE_PORT" C-m
 
-# EKF2 now switches to vehicle_imu_ai automatically once the bridge is publishing.
-# Use the pxh console only if you need to force a specific source:
-#   param set EKF2_IMU_SRC 1   # raw only
-#   param set EKF2_IMU_SRC 2   # AI only
-#   param set EKF2_IMU_SRC 0   # return to automatic
+# EKF2 uses raw vehicle_imu by default. From the pxh console you can force the AI feed:
+#   param set EKF2_IMU_SRC 1   # use vehicle_imu_ai
+#   ekf2 stop; ekf2 start; ekf2 status
+# Return to raw data with:
+#   param set EKF2_IMU_SRC 0
+#   ekf2 stop; ekf2 start
 #   ekf2 stop; ekf2 start; ekf2 status
 
 # Pane 2: MAVROS launch (split below PX4 SITL)

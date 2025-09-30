@@ -239,13 +239,7 @@ bool EKF2::multi_init(int imu, int mag)
 
        bool changed_instance = _vehicle_imu_sub.ChangeInstance(imu) && _magnetometer_sub.ChangeInstance(mag);
 
-       if (_vehicle_imu_ai_sub.ChangeInstance(imu)) {
-               _vehicle_imu_ai_ready = true;
-               _vehicle_imu_ai_waiting_logged = false;
-
-       } else {
-               _vehicle_imu_ai_ready = false;
-               _vehicle_imu_ai_waiting_logged = false;
+       if (!_vehicle_imu_ai_sub.ChangeInstance(imu)) {
                PX4_DEBUG("vehicle_imu_ai[%d] not ready during init, will retry when advertised", imu);
        }
 
@@ -359,61 +353,30 @@ void EKF2::Run()
        ImuSource requested_source = _imu_source;
 
        if (_multi_mode) {
-               const int32_t imu_src = _param_ekf2_imu_src.get();
-
-               switch (imu_src) {
-               case 2:
-                       requested_source = ImuSource::VehicleImuAi;
-                       break;
-
-               case 1:
-                       requested_source = ImuSource::VehicleImu;
-                       break;
-
-               case 0:
-               default:
-                       requested_source = _vehicle_imu_ai_sub.advertised() ? ImuSource::VehicleImuAi : ImuSource::VehicleImu;
-                       break;
-               }
+               requested_source = (_param_ekf2_imu_src.get() == 1) ? ImuSource::VehicleImuAi : ImuSource::VehicleImu;
 
        } else {
                requested_source = ImuSource::SensorCombined;
        }
 
-       if (_multi_mode && (requested_source == ImuSource::VehicleImuAi) && !_vehicle_imu_ai_ready) {
+       if (_multi_mode && (requested_source == ImuSource::VehicleImuAi)) {
                const uint8_t imu_instance = _vehicle_imu_sub.get_instance();
 
-               if (_vehicle_imu_ai_sub.ChangeInstance(imu_instance)) {
-                       _vehicle_imu_ai_ready = true;
-                       _vehicle_imu_ai_waiting_logged = false;
-                       PX4_INFO("vehicle_imu_ai[%u] available", imu_instance);
+               if (_vehicle_imu_ai_sub.get_instance() != imu_instance) {
+                       if (_vehicle_imu_ai_sub.ChangeInstance(imu_instance)) {
+                               _vehicle_imu_ai_missing_warned = false;
+
+                       } else if (!_vehicle_imu_ai_missing_warned) {
+                               PX4_WARN("vehicle_imu_ai[%u] not advertised", imu_instance);
+                               _vehicle_imu_ai_missing_warned = true;
+                       }
 
                } else {
-                       if (_param_ekf2_imu_src.get() != 2) {
-                               if (!_vehicle_imu_ai_waiting_logged) {
-                                       PX4_INFO("vehicle_imu_ai[%u] not ready, continuing with raw IMU", imu_instance);
-                                       _vehicle_imu_ai_waiting_logged = true;
-                               }
-
-                               requested_source = ImuSource::VehicleImu;
-
-                       } else if (!_vehicle_imu_ai_waiting_logged) {
-                               PX4_WARN("vehicle_imu_ai[%u] not ready, waiting for AI IMU data", imu_instance);
-                               _vehicle_imu_ai_waiting_logged = true;
-                       }
-               }
-       }
-
-       if (_multi_mode && (requested_source != ImuSource::VehicleImuAi)) {
-               if (_vehicle_imu_ai_ready && (_imu_source == ImuSource::VehicleImuAi)) {
-                       PX4_INFO("vehicle_imu_ai disabled, reverting to raw IMU");
+                       _vehicle_imu_ai_missing_warned = false;
                }
 
-               _vehicle_imu_ai_ready = false;
-
-               if (!_vehicle_imu_ai_sub.advertised()) {
-                       _vehicle_imu_ai_waiting_logged = false;
-               }
+       } else if (_vehicle_imu_ai_missing_warned) {
+               _vehicle_imu_ai_missing_warned = false;
        }
 
        if (requested_source != _imu_source) {
