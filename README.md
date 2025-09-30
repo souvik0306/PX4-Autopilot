@@ -32,6 +32,8 @@ ekf2 start
 
 Change `EKF2_IMU_SRC` back to `0` and restart the module to return to the raw feed. Before switching, ensure the AI bridge is publishing valid FRD-frame deltas on `vehicle_imu_ai` (check with `listener vehicle_imu_ai`).
 
+On boot EKF2 keeps consuming `vehicle_imu` until the bridge actually advertises `vehicle_imu_ai`; it prints `vehicle_imu_ai not advertised yet, waiting for publisher` until the first packet arrives, then `vehicle_imu_ai[x] available` after the stream stabilises. If the AI feed stalls for roughly 0.2&nbsp;s the estimator logs `vehicle_imu_ai disabled, reverting to raw IMU` and automatically falls back to the raw topic so downstream consumers (e.g. MAVROS) keep receiving timely IMU data.
+
 
 ## Building a PX4 based drone, rover, boat or robot
 

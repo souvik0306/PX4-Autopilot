@@ -39,6 +39,8 @@ using matrix::Eulerf;
 using matrix::Quatf;
 using matrix::Vector3f;
 
+static constexpr hrt_abstime kVehicleImuAiTimeoutUs{200_ms};
+
 pthread_mutex_t ekf2_module_mutex = PTHREAD_MUTEX_INITIALIZER;
 static px4::atomic<EKF2 *> _objects[EKF2_MAX_INSTANCES] {};
 #if !defined(CONSTRAINED_FLASH)
@@ -348,78 +350,135 @@ void EKF2::Run()
                }
         }
 
-       bool source_changed = false;
+	bool source_changed = false;
+	const hrt_abstime now = hrt_absolute_time();
 
-       ImuSource requested_source = _imu_source;
+	ImuSource requested_source = _imu_source;
 
-       if (_multi_mode) {
-               requested_source = (_param_ekf2_imu_src.get() == 1) ? ImuSource::VehicleImuAi : ImuSource::VehicleImu;
+	if (_multi_mode) {
+		if ((_param_ekf2_imu_src.get() == 1) && ((now >= _vehicle_imu_ai_retry_time) || (_vehicle_imu_ai_retry_time == 0))) {
+			requested_source = ImuSource::VehicleImuAi;
 
-       } else {
-               requested_source = ImuSource::SensorCombined;
-       }
+		} else {
+			requested_source = ImuSource::VehicleImu;
+		}
 
-       if (_multi_mode && (requested_source == ImuSource::VehicleImuAi)) {
-               const uint8_t imu_instance = _vehicle_imu_sub.get_instance();
+	} else {
+		requested_source = ImuSource::SensorCombined;
+	}
 
-               if (_vehicle_imu_ai_sub.get_instance() != imu_instance) {
-                       if (_vehicle_imu_ai_sub.ChangeInstance(imu_instance)) {
-                               _vehicle_imu_ai_missing_warned = false;
+	if (_multi_mode && (requested_source == ImuSource::VehicleImuAi)) {
+		const uint8_t imu_instance = _vehicle_imu_sub.get_instance();
 
-                       } else if (!_vehicle_imu_ai_missing_warned) {
-                               PX4_WARN("vehicle_imu_ai[%u] not advertised", imu_instance);
-                               _vehicle_imu_ai_missing_warned = true;
-                       }
+		if (_vehicle_imu_ai_sub.get_instance() != imu_instance) {
+			if (_vehicle_imu_ai_sub.ChangeInstance(imu_instance)) {
+				_vehicle_imu_ai_missing_warned = false;
 
-               } else {
-                       _vehicle_imu_ai_missing_warned = false;
-               }
+			} else {
+				if (!_vehicle_imu_ai_missing_warned) {
+					PX4_WARN("vehicle_imu_ai[%u] not advertised", imu_instance);
+					_vehicle_imu_ai_missing_warned = true;
+				}
 
-       } else if (_vehicle_imu_ai_missing_warned) {
-               _vehicle_imu_ai_missing_warned = false;
-       }
+				requested_source = ImuSource::VehicleImu;
+				_vehicle_imu_ai_retry_time = now + 200_ms;
+			}
 
-       if (requested_source != _imu_source) {
-               if (_callback_registered) {
-                       imuCallbackSubscription(_imu_source)->unregisterCallback();
-                       _callback_registered = false;
-               }
+		} else {
+			_vehicle_imu_ai_missing_warned = false;
+		}
 
-               _imu_source = requested_source;
-               source_changed = true;
-       }
+	} else if (_vehicle_imu_ai_missing_warned) {
+		_vehicle_imu_ai_missing_warned = false;
+	}
 
-        if (!_callback_registered) {
-                _callback_registered = imuCallbackSubscription(_imu_source)->registerCallback();
+	if ((requested_source == ImuSource::VehicleImuAi) && !_vehicle_imu_ai_sub.advertised()) {
+		if (!_vehicle_imu_ai_missing_warned) {
+			PX4_INFO("vehicle_imu_ai not advertised yet, waiting for publisher");
+			_vehicle_imu_ai_missing_warned = true;
+		}
 
-                if (!_callback_registered) {
-                        ScheduleDelayed(10_ms);
-                        return;
-                }
+		requested_source = _multi_mode ? ImuSource::VehicleImu : ImuSource::SensorCombined;
+		_vehicle_imu_ai_retry_time = now + 200_ms;
 
-               if (source_changed) {
-                       if (_imu_source == ImuSource::VehicleImuAi) {
-                               PX4_INFO("EKF2 IMU source switched to vehicle_imu_ai[%u]", _vehicle_imu_ai_sub.get_instance());
+	} else if (_vehicle_imu_ai_missing_warned && (requested_source != ImuSource::VehicleImuAi)) {
+		_vehicle_imu_ai_missing_warned = false;
+	}
 
-                       } else if (_imu_source == ImuSource::VehicleImu) {
-                               PX4_INFO("EKF2 IMU source switched to vehicle_imu");
+	if ((_imu_source == ImuSource::VehicleImuAi) && (requested_source == ImuSource::VehicleImuAi)) {
+		const hrt_abstime last_update = (_vehicle_imu_ai_last_update > 0) ? _vehicle_imu_ai_last_update : _vehicle_imu_ai_switch_time;
 
-                       } else {
-                               PX4_INFO("EKF2 IMU source switched to sensor_combined");
-                       }
-               }
+		if ((last_update > 0) && ((now - last_update) > kVehicleImuAiTimeoutUs)) {
+			if (!_vehicle_imu_ai_stale_warned) {
+				PX4_WARN("vehicle_imu_ai disabled, reverting to raw IMU");
+				_vehicle_imu_ai_stale_warned = true;
+			}
 
-       } else if (source_changed) {
-               if (_imu_source == ImuSource::VehicleImuAi) {
-                       PX4_INFO("EKF2 IMU source switched to vehicle_imu_ai[%u]", _vehicle_imu_ai_sub.get_instance());
+			requested_source = _multi_mode ? ImuSource::VehicleImu : ImuSource::SensorCombined;
+			_vehicle_imu_ai_retry_time = now + 1_s;
+		}
 
-               } else if (_imu_source == ImuSource::VehicleImu) {
-                       PX4_INFO("EKF2 IMU source switched to vehicle_imu");
+	} else if (_vehicle_imu_ai_stale_warned && (requested_source != ImuSource::VehicleImuAi)) {
+		_vehicle_imu_ai_stale_warned = false;
+	}
 
-               } else {
-                       PX4_INFO("EKF2 IMU source switched to sensor_combined");
-               }
-        }
+	if (requested_source != _imu_source) {
+		if (_callback_registered) {
+			imuCallbackSubscription(_imu_source)->unregisterCallback();
+			_callback_registered = false;
+		}
+
+		_imu_source = requested_source;
+		source_changed = true;
+
+		if (_imu_source == ImuSource::VehicleImuAi) {
+			_vehicle_imu_ai_switch_time = hrt_absolute_time();
+			_vehicle_imu_ai_last_update = 0;
+			_vehicle_imu_ai_available_logged = false;
+			_vehicle_imu_ai_stale_warned = false;
+			_vehicle_imu_ai_retry_time = 0;
+
+		} else {
+			_vehicle_imu_ai_switch_time = 0;
+			_vehicle_imu_ai_last_update = 0;
+		}
+	}
+
+	if (!_callback_registered) {
+		_callback_registered = imuCallbackSubscription(_imu_source)->registerCallback();
+
+		if (!_callback_registered) {
+			ScheduleDelayed(10_ms);
+			return;
+		}
+
+		if ((_imu_source == ImuSource::VehicleImuAi) && (_vehicle_imu_ai_last_update == 0)) {
+			ScheduleDelayed(20_ms);
+		}
+
+		if (source_changed) {
+			if (_imu_source == ImuSource::VehicleImuAi) {
+				PX4_INFO("EKF2 IMU source switched to vehicle_imu_ai[%u]", _vehicle_imu_ai_sub.get_instance());
+
+			} else if (_imu_source == ImuSource::VehicleImu) {
+				PX4_INFO("EKF2 IMU source switched to vehicle_imu");
+
+			} else {
+				PX4_INFO("EKF2 IMU source switched to sensor_combined");
+			}
+		}
+
+	} else if (source_changed) {
+		if (_imu_source == ImuSource::VehicleImuAi) {
+			PX4_INFO("EKF2 IMU source switched to vehicle_imu_ai[%u]", _vehicle_imu_ai_sub.get_instance());
+
+		} else if (_imu_source == ImuSource::VehicleImu) {
+			PX4_INFO("EKF2 IMU source switched to vehicle_imu");
+
+		} else {
+			PX4_INFO("EKF2 IMU source switched to sensor_combined");
+		}
+	}
 
 	if (_vehicle_command_sub.updated()) {
 		vehicle_command_s vehicle_command;
@@ -458,12 +517,24 @@ void EKF2::Run()
                         perf_count(_msg_missed_imu_perf);
                 }
 
-                if (imu_updated) {
-                        imu_sample_new.time_us = imu.timestamp_sample;
-                        imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
-                        imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-                        imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
-                        imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+		if (imu_updated) {
+			const hrt_abstime sample_time = hrt_absolute_time();
+			_vehicle_imu_ai_last_update = sample_time;
+			_vehicle_imu_ai_retry_time = 0;
+			_vehicle_imu_ai_stale_warned = false;
+
+			if (!_vehicle_imu_ai_available_logged) {
+				PX4_INFO("vehicle_imu_ai[%u] available", _vehicle_imu_ai_sub.get_instance());
+				_vehicle_imu_ai_available_logged = true;
+			}
+
+			_vehicle_imu_ai_missing_warned = false;
+
+			imu_sample_new.time_us = imu.timestamp_sample;
+			imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
+			imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
+			imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
+			imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
 
                         if (imu.delta_velocity_clipping > 0) {
                                 imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
@@ -646,7 +717,11 @@ void EKF2::Run()
                 }
                 break;
         }
-        }
+}
+
+	if ((_imu_source == ImuSource::VehicleImuAi) && !imu_updated) {
+		ScheduleDelayed(20_ms);
+	}
 
 	if (imu_updated) {
 		const hrt_abstime now = imu_sample_new.time_us;
