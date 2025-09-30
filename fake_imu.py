@@ -34,7 +34,9 @@ class AIDeltaSender:
         self.udp_port = int(rospy.get_param('~udp_port', 14560))
         self.alpha = float(rospy.get_param('~alpha', 0.2))  # LPF coefficient [0..1]
         self.max_dt = float(rospy.get_param('~max_dt', 0.02 * 2))  # cap dt to 2x nominal 200 Hz
-        self.min_dt = float(rospy.get_param('~min_dt', 1e-4))
+        # Bridge rejects integration windows shorter than 0.5 ms, so default above that.
+        self.min_dt = float(rospy.get_param('~min_dt', 5e-4))
+        self._last_short_dt_log = 0.0
 
         # Device IDs so EKF2 can distinguish synthetic AI data from raw IMU
         self.accel_device_id = int(rospy.get_param('~accel_device_id', 0xA14ACC01))
@@ -95,6 +97,20 @@ class AIDeltaSender:
             return
 
         dt = stamp - self.last_stamp
+
+        # Skip frames until we accumulate at least the bridge minimum dt. When we drop a
+        # sample we keep the previous timestamp so the next pass integrates a longer
+        # window instead of emitting invalid packets that PX4 will reject.
+        now_sec = rospy.Time.now().to_sec()
+        if dt <= 0.0 or dt < self.min_dt:
+            if now_sec - self._last_short_dt_log >= 5.0:
+                rospy.logwarn(
+                    f"[ai_delta_sender] skipping short/negative dt {dt * 1e6:.3f}us "
+                    f"(min={self.min_dt * 1e6:.3f}us)"
+                )
+                self._last_short_dt_log = now_sec
+            return
+
         self.last_stamp = stamp
         dt = self._clamp(dt, self.min_dt, self.max_dt)
 

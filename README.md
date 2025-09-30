@@ -20,6 +20,18 @@ PX4 is highly portable, OS-independent and supports Linux, NuttX and MacOS out o
   * many more experimental types (Blimps, Boats, Submarines, High altitude balloons, etc)
 * Releases: [Downloads](https://github.com/PX4/PX4-Autopilot/releases)
 
+### Switching EKF2 between raw and AI IMU feeds
+
+When both the raw IMU (`vehicle_imu`) and AI-processed IMU (`vehicle_imu_ai`) are available, EKF2 can toggle between them at runtime. Run the following commands from the PX4 shell (`pxh>`) to swap sources:
+
+```
+param set EKF2_IMU_SRC 1    # 0 = raw vehicle_imu, 1 = AI vehicle_imu_ai
+ekf2 stop
+ekf2 start
+```
+
+Change `EKF2_IMU_SRC` back to `0` and restart the module to return to the raw feed. Before switching, ensure the AI bridge is publishing valid FRD-frame deltas on `vehicle_imu_ai` (check with `listener vehicle_imu_ai`).
+
 
 ## Building a PX4 based drone, rover, boat or robot
 
