@@ -268,7 +268,27 @@ private:
 	int _distance_sensor_selected{-1}; // because we can have several distance sensor instances with different orientations
 	unsigned _distance_sensor_last_generation{0};
 
-	bool _callback_registered{false};
+        enum class ImuMode : uint8_t {
+                Auto = 0,
+                Raw,
+                Ai,
+        };
+
+        enum class ImuSource : uint8_t {
+                Raw = 0,
+                Ai,
+        };
+
+        bool _callback_registered{false};
+
+        ImuMode _configured_imu_mode{ImuMode::Auto};
+        ImuSource _active_imu_source{ImuSource::Raw};
+        hrt_abstime _last_ai_sample_time{0};
+        hrt_abstime _last_ai_reject_log{0};
+        hrt_abstime _last_ai_stale_log{0};
+        hrt_abstime _last_keepalive_log{0};
+        bool _ai_feed_detected{false};
+        bool _ai_feed_not_active_logged{false};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};

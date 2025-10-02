@@ -327,6 +327,18 @@ SquareMatrix<Type, M> expm(const Matrix<Type, M, M> &A, size_t order = 5)
 template<typename Type, size_t M>
 bool inv(const SquareMatrix<Type, M> &A, SquareMatrix<Type, M> &inv, size_t rank = M)
 {
+	if (rank == 1) {
+		const Type a00 = A(0, 0);
+
+		if (fabs(static_cast<float>(a00)) < FLT_EPSILON) {
+			return false;
+		}
+
+		inv.setZero();
+		inv(0, 0) = Type(1) / a00;
+		return true;
+	}
+
 	SquareMatrix<Type, M> L;
 	L.setIdentity();
 	SquareMatrix<Type, M> U = A;

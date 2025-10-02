@@ -89,7 +89,7 @@ public:
 		assert(i < M);
 		assert(j < N);
 
-		return _data[i][j];
+		return reinterpret_cast<const Type *>(_data)[i * N + j];
 	}
 
 	inline Type &operator()(size_t i, size_t j)
@@ -97,7 +97,7 @@ public:
 		assert(i < M);
 		assert(j < N);
 
-		return _data[i][j];
+		return reinterpret_cast<Type *>(_data)[i * N + j];
 	}
 
 	Matrix<Type, M, N> &operator=(const Matrix<Type, M, N> &other)
