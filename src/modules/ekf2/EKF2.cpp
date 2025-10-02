@@ -241,6 +241,9 @@ bool EKF2::multi_init(int imu, int mag)
 
        bool changed_instance = _vehicle_imu_sub.ChangeInstance(imu) && _magnetometer_sub.ChangeInstance(mag);
 
+       // keep a passive subscription to the raw IMU so simulators keep publishing even when the AI feed is selected
+       _vehicle_imu_keepalive_sub.ChangeInstance(imu);
+
        if (!_vehicle_imu_ai_sub.ChangeInstance(imu)) {
                PX4_DEBUG("vehicle_imu_ai[%d] not ready during init, will retry when advertised", imu);
        }
@@ -428,13 +431,16 @@ void EKF2::Run()
 			_callback_registered = false;
 		}
 
-		_imu_source = requested_source;
-		source_changed = true;
+               _imu_source = requested_source;
+               source_changed = true;
 
-		if (_imu_source == ImuSource::VehicleImuAi) {
-			_vehicle_imu_ai_switch_time = hrt_absolute_time();
-			_vehicle_imu_ai_last_update = 0;
-			_vehicle_imu_ai_available_logged = false;
+               if (_imu_source == ImuSource::VehicleImuAi) {
+                       // keep raw vehicle_imu subscribed to prevent upstream publishers from idling
+                       _vehicle_imu_keepalive_sub.ChangeInstance(_vehicle_imu_sub.get_instance());
+
+                       _vehicle_imu_ai_switch_time = hrt_absolute_time();
+                       _vehicle_imu_ai_last_update = 0;
+                       _vehicle_imu_ai_available_logged = false;
 			_vehicle_imu_ai_stale_warned = false;
 			_vehicle_imu_ai_retry_time = 0;
 
