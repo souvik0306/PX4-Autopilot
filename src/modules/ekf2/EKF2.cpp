@@ -425,11 +425,11 @@ void EKF2::Run()
 		_vehicle_imu_ai_stale_warned = false;
 	}
 
-	if (requested_source != _imu_source) {
-		if (_callback_registered) {
-			imuCallbackSubscription(_imu_source)->unregisterCallback();
-			_callback_registered = false;
-		}
+       if (requested_source != _imu_source) {
+               if (_callback_registered) {
+                       imuCallbackSubscription(_imu_source)->unregisterCallback();
+                       _callback_registered = false;
+               }
 
                _imu_source = requested_source;
                source_changed = true;
@@ -448,10 +448,16 @@ void EKF2::Run()
 			_vehicle_imu_ai_switch_time = 0;
 			_vehicle_imu_ai_last_update = 0;
 		}
-	}
+       }
 
-	if (!_callback_registered) {
-		_callback_registered = imuCallbackSubscription(_imu_source)->registerCallback();
+       if (_multi_mode && (_imu_source == ImuSource::VehicleImuAi)) {
+               while (_vehicle_imu_keepalive_sub.update(&_vehicle_imu_keepalive_sample)) {
+                       // drain raw vehicle_imu to keep simulator publishers active
+               }
+       }
+
+       if (!_callback_registered) {
+               _callback_registered = imuCallbackSubscription(_imu_source)->registerCallback();
 
 		if (!_callback_registered) {
 			ScheduleDelayed(10_ms);

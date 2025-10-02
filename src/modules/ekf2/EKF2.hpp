@@ -268,8 +268,9 @@ private:
 
        uORB::SubscriptionCallbackWorkItem _sensor_combined_sub{this, ORB_ID(sensor_combined)};
        uORB::SubscriptionCallbackWorkItem _vehicle_imu_sub{this, ORB_ID(vehicle_imu)};
-       // keeps the raw vehicle_imu subscribed when the AI source is active
+       // keeps the raw vehicle_imu subscribed and drained when the AI source is active
        uORB::Subscription _vehicle_imu_keepalive_sub{ORB_ID(vehicle_imu)};
+       vehicle_imu_s _vehicle_imu_keepalive_sample{};
        uORB::SubscriptionCallbackWorkItem _vehicle_imu_ai_sub{this, ORB_ID(vehicle_imu_ai)};
 
 	uORB::SubscriptionMultiArray<distance_sensor_s> _distance_sensor_subs{ORB_ID::distance_sensor};
