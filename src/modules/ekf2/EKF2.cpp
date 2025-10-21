@@ -33,13 +33,18 @@
 
 #include "EKF2.hpp"
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+
 using namespace time_literals;
 using math::constrain;
 using matrix::Eulerf;
 using matrix::Quatf;
 using matrix::Vector3f;
-
-static constexpr hrt_abstime kVehicleImuAiTimeoutUs{200_ms};
 
 pthread_mutex_t ekf2_module_mutex = PTHREAD_MUTEX_INITIALIZER;
 static px4::atomic<EKF2 *> _objects[EKF2_MAX_INSTANCES] {};
@@ -60,7 +65,6 @@ EKF2::EKF2(bool multi_mode, const px4::wq_config_t &config, bool replay_mode):
 	_wind_pub(multi_mode ? ORB_ID(estimator_wind) : ORB_ID(wind)),
 	_params(_ekf.getParamHandle()),
 	_param_ekf2_predict_us(_params->filter_update_interval_us),
-	_param_ekf2_imu_src(),
 	_param_ekf2_mag_delay(_params->mag_delay_ms),
 	_param_ekf2_baro_delay(_params->baro_delay_ms),
 	_param_ekf2_gps_delay(_params->gps_delay_ms),
@@ -180,25 +184,7 @@ EKF2::EKF2(bool multi_mode, const px4::wq_config_t &config, bool replay_mode):
 	_estimator_states_pub.advertise();
 	_estimator_status_flags_pub.advertise();
 	_estimator_status_pub.advertise();
-
-	_imu_source = _multi_mode ? ImuSource::VehicleImu : ImuSource::SensorCombined;
 }
-
-uORB::SubscriptionCallbackWorkItem *EKF2::imuCallbackSubscription(ImuSource source)
-{
-	switch (source) {
-	case ImuSource::VehicleImu:
-		return &_vehicle_imu_sub;
-
-	case ImuSource::VehicleImuAi:
-		return &_vehicle_imu_ai_sub;
-
-	case ImuSource::SensorCombined:
-	default:
-		return &_sensor_combined_sub;
-	}
-}
-
 
 EKF2::~EKF2()
 {
@@ -213,6 +199,12 @@ EKF2::~EKF2()
 	perf_free(_msg_missed_magnetometer_perf);
 	perf_free(_msg_missed_odometry_perf);
 	perf_free(_msg_missed_optical_flow_perf);
+
+	// Clean up UDP socket
+	if (_imu_udp_socket >= 0) {
+		close(_imu_udp_socket);
+		_imu_udp_socket = -1;
+	}
 }
 
 bool EKF2::multi_init(int imu, int mag)
@@ -239,11 +231,7 @@ bool EKF2::multi_init(int imu, int mag)
 	_odometry_pub.advertise();
 	_wind_pub.advertise();
 
-       bool changed_instance = _vehicle_imu_sub.ChangeInstance(imu) && _magnetometer_sub.ChangeInstance(mag);
-
-       if (!_vehicle_imu_ai_sub.ChangeInstance(imu)) {
-               PX4_DEBUG("vehicle_imu_ai[%d] not ready during init, will retry when advertised", imu);
-       }
+	bool changed_instance = _vehicle_imu_sub.ChangeInstance(imu) && _magnetometer_sub.ChangeInstance(mag);
 
 	const int status_instance = _estimator_states_pub.get_instance();
 
@@ -294,7 +282,6 @@ void EKF2::Run()
 	if (should_exit()) {
 		_sensor_combined_sub.unregisterCallback();
 		_vehicle_imu_sub.unregisterCallback();
-		_vehicle_imu_ai_sub.unregisterCallback();
 
 		return;
 	}
@@ -333,150 +320,34 @@ void EKF2::Run()
 			}
 		}
 
-               // if using mag ensure sensor interval minimum is sufficient to accommodate system averaged mag output
-               if (_params->mag_fusion_type != MAG_FUSE_TYPE_NONE) {
-                       float sens_mag_rate = 0.f;
+		// if using mag ensure sensor interval minimum is sufficient to accommodate system averaged mag output
+		if (_params->mag_fusion_type != MAG_FUSE_TYPE_NONE) {
+			float sens_mag_rate = 0.f;
 
-                       if (param_get(param_find("SENS_MAG_RATE"), &sens_mag_rate) == PX4_OK) {
-                               if (sens_mag_rate > 0) {
-                                       float interval_ms = roundf(1000.f / sens_mag_rate);
+			if (param_get(param_find("SENS_MAG_RATE"), &sens_mag_rate) == PX4_OK) {
+				if (sens_mag_rate > 0) {
+					float interval_ms = roundf(1000.f / sens_mag_rate);
 
-                                       if (PX4_ISFINITE(interval_ms) && (interval_ms > _params->sensor_interval_max_ms)) {
-                                               PX4_DEBUG("updating sensor_interval_max_ms %.3f -> %.3f", (double)_params->sensor_interval_max_ms, (double)interval_ms);
-                                               _params->sensor_interval_max_ms = interval_ms;
-                                       }
-                               }
-                       }
-               }
-        }
-
-	bool source_changed = false;
-	const hrt_abstime now = hrt_absolute_time();
-
-	ImuSource requested_source = _imu_source;
-
-	if (_multi_mode) {
-		if ((_param_ekf2_imu_src.get() == 1) && ((now >= _vehicle_imu_ai_retry_time) || (_vehicle_imu_ai_retry_time == 0))) {
-			requested_source = ImuSource::VehicleImuAi;
-
-		} else {
-			requested_source = ImuSource::VehicleImu;
-		}
-
-	} else {
-		requested_source = ImuSource::SensorCombined;
-	}
-
-	if (_multi_mode && (requested_source == ImuSource::VehicleImuAi)) {
-		const uint8_t imu_instance = _vehicle_imu_sub.get_instance();
-
-		if (_vehicle_imu_ai_sub.get_instance() != imu_instance) {
-			if (_vehicle_imu_ai_sub.ChangeInstance(imu_instance)) {
-				_vehicle_imu_ai_missing_warned = false;
-
-			} else {
-				if (!_vehicle_imu_ai_missing_warned) {
-					PX4_WARN("vehicle_imu_ai[%u] not advertised", imu_instance);
-					_vehicle_imu_ai_missing_warned = true;
+					if (PX4_ISFINITE(interval_ms) && (interval_ms > _params->sensor_interval_max_ms)) {
+						PX4_DEBUG("updating sensor_interval_max_ms %.3f -> %.3f", (double)_params->sensor_interval_max_ms, (double)interval_ms);
+						_params->sensor_interval_max_ms = interval_ms;
+					}
 				}
-
-				requested_source = ImuSource::VehicleImu;
-				_vehicle_imu_ai_retry_time = now + 200_ms;
 			}
-
-		} else {
-			_vehicle_imu_ai_missing_warned = false;
-		}
-
-	} else if (_vehicle_imu_ai_missing_warned) {
-		_vehicle_imu_ai_missing_warned = false;
-	}
-
-	if ((requested_source == ImuSource::VehicleImuAi) && !_vehicle_imu_ai_sub.advertised()) {
-		if (!_vehicle_imu_ai_missing_warned) {
-			PX4_INFO("vehicle_imu_ai not advertised yet, waiting for publisher");
-			_vehicle_imu_ai_missing_warned = true;
-		}
-
-		requested_source = _multi_mode ? ImuSource::VehicleImu : ImuSource::SensorCombined;
-		_vehicle_imu_ai_retry_time = now + 200_ms;
-
-	} else if (_vehicle_imu_ai_missing_warned && (requested_source != ImuSource::VehicleImuAi)) {
-		_vehicle_imu_ai_missing_warned = false;
-	}
-
-	if ((_imu_source == ImuSource::VehicleImuAi) && (requested_source == ImuSource::VehicleImuAi)) {
-		const hrt_abstime last_update = (_vehicle_imu_ai_last_update > 0) ? _vehicle_imu_ai_last_update : _vehicle_imu_ai_switch_time;
-
-		if ((last_update > 0) && ((now - last_update) > kVehicleImuAiTimeoutUs)) {
-			if (!_vehicle_imu_ai_stale_warned) {
-				PX4_WARN("vehicle_imu_ai disabled, reverting to raw IMU");
-				_vehicle_imu_ai_stale_warned = true;
-			}
-
-			requested_source = _multi_mode ? ImuSource::VehicleImu : ImuSource::SensorCombined;
-			_vehicle_imu_ai_retry_time = now + 1_s;
-		}
-
-	} else if (_vehicle_imu_ai_stale_warned && (requested_source != ImuSource::VehicleImuAi)) {
-		_vehicle_imu_ai_stale_warned = false;
-	}
-
-	if (requested_source != _imu_source) {
-		if (_callback_registered) {
-			imuCallbackSubscription(_imu_source)->unregisterCallback();
-			_callback_registered = false;
-		}
-
-		_imu_source = requested_source;
-		source_changed = true;
-
-		if (_imu_source == ImuSource::VehicleImuAi) {
-			_vehicle_imu_ai_switch_time = hrt_absolute_time();
-			_vehicle_imu_ai_last_update = 0;
-			_vehicle_imu_ai_available_logged = false;
-			_vehicle_imu_ai_stale_warned = false;
-			_vehicle_imu_ai_retry_time = 0;
-
-		} else {
-			_vehicle_imu_ai_switch_time = 0;
-			_vehicle_imu_ai_last_update = 0;
 		}
 	}
 
 	if (!_callback_registered) {
-		_callback_registered = imuCallbackSubscription(_imu_source)->registerCallback();
+		if (_multi_mode) {
+			_callback_registered = _vehicle_imu_sub.registerCallback();
+
+		} else {
+			_callback_registered = _sensor_combined_sub.registerCallback();
+		}
 
 		if (!_callback_registered) {
 			ScheduleDelayed(10_ms);
 			return;
-		}
-
-		if ((_imu_source == ImuSource::VehicleImuAi) && (_vehicle_imu_ai_last_update == 0)) {
-			ScheduleDelayed(20_ms);
-		}
-
-		if (source_changed) {
-			if (_imu_source == ImuSource::VehicleImuAi) {
-				PX4_INFO("EKF2 IMU source switched to vehicle_imu_ai[%u]", _vehicle_imu_ai_sub.get_instance());
-
-			} else if (_imu_source == ImuSource::VehicleImu) {
-				PX4_INFO("EKF2 IMU source switched to vehicle_imu");
-
-			} else {
-				PX4_INFO("EKF2 IMU source switched to sensor_combined");
-			}
-		}
-
-	} else if (source_changed) {
-		if (_imu_source == ImuSource::VehicleImuAi) {
-			PX4_INFO("EKF2 IMU source switched to vehicle_imu_ai[%u]", _vehicle_imu_ai_sub.get_instance());
-
-		} else if (_imu_source == ImuSource::VehicleImu) {
-			PX4_INFO("EKF2 IMU source switched to vehicle_imu");
-
-		} else {
-			PX4_INFO("EKF2 IMU source switched to sensor_combined");
 		}
 	}
 
@@ -507,228 +378,161 @@ void EKF2::Run()
 
 	hrt_abstime imu_dt = 0; // for tracking time slip later
 
-        switch (_imu_source) {
-        case ImuSource::VehicleImuAi: {
-                const unsigned last_generation = _vehicle_imu_ai_sub.get_last_generation();
-                vehicle_imu_ai_s imu;
-                imu_updated = _vehicle_imu_ai_sub.update(&imu);
+	if (_multi_mode) {
+		const unsigned last_generation = _vehicle_imu_sub.get_last_generation();
+		vehicle_imu_s imu;
+		imu_updated = _vehicle_imu_sub.update(&imu);
 
-                if (imu_updated && (_vehicle_imu_ai_sub.get_last_generation() != last_generation + 1)) {
-                        perf_count(_msg_missed_imu_perf);
-                }
+		if (imu_updated && (_vehicle_imu_sub.get_last_generation() != last_generation + 1)) {
+			perf_count(_msg_missed_imu_perf);
+		}
 
 		if (imu_updated) {
-			const hrt_abstime sample_time = hrt_absolute_time();
-			_vehicle_imu_ai_last_update = sample_time;
-			_vehicle_imu_ai_retry_time = 0;
-			_vehicle_imu_ai_stale_warned = false;
-
-			if (!_vehicle_imu_ai_available_logged) {
-				PX4_INFO("vehicle_imu_ai[%u] available", _vehicle_imu_ai_sub.get_instance());
-				_vehicle_imu_ai_available_logged = true;
-			}
-
-			_vehicle_imu_ai_missing_warned = false;
-
 			imu_sample_new.time_us = imu.timestamp_sample;
 			imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
 			imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
 			imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
 			imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
 
-                        if (imu.delta_velocity_clipping > 0) {
-                                imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
-                                imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Y;
-                                imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
-                        }
+			if (imu.delta_velocity_clipping > 0) {
+				imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_X;
+				imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Y;
+				imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Z;
+			}
 
-                        imu_dt = imu.delta_angle_dt;
+			imu_dt = imu.delta_angle_dt;
 
-                        if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
-                                _device_id_accel = imu.accel_device_id;
-                                _device_id_gyro = imu.gyro_device_id;
-                                _accel_calibration_count = imu.accel_calibration_count;
-                                _gyro_calibration_count = imu.gyro_calibration_count;
+			if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
+				_device_id_accel = imu.accel_device_id;
+				_device_id_gyro = imu.gyro_device_id;
+				_accel_calibration_count = imu.accel_calibration_count;
+				_gyro_calibration_count = imu.gyro_calibration_count;
 
-                        } else {
-                                if ((imu.accel_calibration_count != _accel_calibration_count)
-                                    || (imu.accel_device_id != _device_id_accel)) {
+			} else {
+				if ((imu.accel_calibration_count != _accel_calibration_count)
+				    || (imu.accel_device_id != _device_id_accel)) {
 
-                                        PX4_DEBUG("%d - resetting accelerometer bias", _instance);
-                                        _device_id_accel = imu.accel_device_id;
+					PX4_DEBUG("%d - resetting accelerometer bias", _instance);
+					_device_id_accel = imu.accel_device_id;
 
-                                        _ekf.resetAccelBias();
-                                        _accel_calibration_count = imu.accel_calibration_count;
+					_ekf.resetAccelBias();
+					_accel_calibration_count = imu.accel_calibration_count;
 
-                                        // reset bias learning
-                                        _accel_cal = {};
-                                }
+					// reset bias learning
+					_accel_cal = {};
+				}
 
-                                if ((imu.gyro_calibration_count != _gyro_calibration_count)
-                                    || (imu.gyro_device_id != _device_id_gyro)) {
+				if ((imu.gyro_calibration_count != _gyro_calibration_count)
+				    || (imu.gyro_device_id != _device_id_gyro)) {
 
-                                        PX4_DEBUG("%d - resetting rate gyro bias", _instance);
-                                        _device_id_gyro = imu.gyro_device_id;
+					PX4_DEBUG("%d - resetting rate gyro bias", _instance);
+					_device_id_gyro = imu.gyro_device_id;
 
-                                        _ekf.resetGyroBias();
-                                        _gyro_calibration_count = imu.gyro_calibration_count;
+					_ekf.resetGyroBias();
+					_gyro_calibration_count = imu.gyro_calibration_count;
 
-                                        // reset bias learning
-                                        _gyro_cal = {};
-                                }
-                        }
-                }
-                break;
-        }
+					// reset bias learning
+					_gyro_cal = {};
+				}
+			}
+		}
 
-        case ImuSource::VehicleImu: {
-                const unsigned last_generation = _vehicle_imu_sub.get_last_generation();
-                vehicle_imu_s imu;
-                imu_updated = _vehicle_imu_sub.update(&imu);
+	} else {
+		const unsigned last_generation = _sensor_combined_sub.get_last_generation();
+		sensor_combined_s sensor_combined;
+		imu_updated = _sensor_combined_sub.update(&sensor_combined);
 
-                if (imu_updated && (_vehicle_imu_sub.get_last_generation() != last_generation + 1)) {
-                        perf_count(_msg_missed_imu_perf);
-                }
+		if (imu_updated && (_sensor_combined_sub.get_last_generation() != last_generation + 1)) {
+			perf_count(_msg_missed_imu_perf);
+		}
 
-                if (imu_updated) {
-                        imu_sample_new.time_us = imu.timestamp_sample;
-                        imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
-                        imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-                        imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
-                        imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+		if (imu_updated) {
+			imu_sample_new.time_us = sensor_combined.timestamp;
+			imu_sample_new.delta_ang_dt = sensor_combined.gyro_integral_dt * 1.e-6f;
+			imu_sample_new.delta_ang = Vector3f{sensor_combined.gyro_rad} * imu_sample_new.delta_ang_dt;
+			imu_sample_new.delta_vel_dt = sensor_combined.accelerometer_integral_dt * 1.e-6f;
+			imu_sample_new.delta_vel = Vector3f{sensor_combined.accelerometer_m_s2} * imu_sample_new.delta_vel_dt;
 
-                        if (imu.delta_velocity_clipping > 0) {
-                                imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_X;
-                                imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Y;
-                                imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Z;
-                        }
+			if (sensor_combined.accelerometer_clipping > 0) {
+				imu_sample_new.delta_vel_clipping[0] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_X;
+				imu_sample_new.delta_vel_clipping[1] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Y;
+				imu_sample_new.delta_vel_clipping[2] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Z;
+			}
 
-                        imu_dt = imu.delta_angle_dt;
+			imu_dt = sensor_combined.gyro_integral_dt;
 
-                        if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
-                                _device_id_accel = imu.accel_device_id;
-                                _device_id_gyro = imu.gyro_device_id;
-                                _accel_calibration_count = imu.accel_calibration_count;
-                                _gyro_calibration_count = imu.gyro_calibration_count;
+			if (sensor_combined.accel_calibration_count != _accel_calibration_count) {
 
-                        } else {
-                                if ((imu.accel_calibration_count != _accel_calibration_count)
-                                    || (imu.accel_device_id != _device_id_accel)) {
+				PX4_DEBUG("%d - resetting accelerometer bias", _instance);
 
-                                        PX4_DEBUG("%d - resetting accelerometer bias", _instance);
-                                        _device_id_accel = imu.accel_device_id;
+				_ekf.resetAccelBias();
+				_accel_calibration_count = sensor_combined.accel_calibration_count;
 
-                                        _ekf.resetAccelBias();
-                                        _accel_calibration_count = imu.accel_calibration_count;
+				// reset bias learning
+				_accel_cal = {};
+			}
 
-                                        // reset bias learning
-                                        _accel_cal = {};
-                                }
+			if (sensor_combined.gyro_calibration_count != _gyro_calibration_count) {
 
-                                if ((imu.gyro_calibration_count != _gyro_calibration_count)
-                                    || (imu.gyro_device_id != _device_id_gyro)) {
+				PX4_DEBUG("%d - resetting rate gyro bias", _instance);
 
-                                        PX4_DEBUG("%d - resetting rate gyro bias", _instance);
-                                        _device_id_gyro = imu.gyro_device_id;
+				_ekf.resetGyroBias();
+				_gyro_calibration_count = sensor_combined.gyro_calibration_count;
 
-                                        _ekf.resetGyroBias();
-                                        _gyro_calibration_count = imu.gyro_calibration_count;
+				// reset bias learning
+				_gyro_cal = {};
+			}
+		}
 
-                                        // reset bias learning
-                                        _gyro_cal = {};
-                                }
-                        }
-                }
-                break;
-        }
+		if (_sensor_selection_sub.updated() || (_device_id_accel == 0 || _device_id_gyro == 0)) {
+			sensor_selection_s sensor_selection;
 
-        case ImuSource::SensorCombined:
-        default: {
-                const unsigned last_generation = _sensor_combined_sub.get_last_generation();
-                sensor_combined_s sensor_combined;
-                imu_updated = _sensor_combined_sub.update(&sensor_combined);
+			if (_sensor_selection_sub.copy(&sensor_selection)) {
+				if (_device_id_accel != sensor_selection.accel_device_id) {
 
-                if (imu_updated && (_sensor_combined_sub.get_last_generation() != last_generation + 1)) {
-                        perf_count(_msg_missed_imu_perf);
-                }
+					_device_id_accel = sensor_selection.accel_device_id;
 
-                if (imu_updated) {
-                        imu_sample_new.time_us = sensor_combined.timestamp;
-                        imu_sample_new.delta_ang_dt = sensor_combined.gyro_integral_dt * 1.e-6f;
-                        imu_sample_new.delta_ang = Vector3f{sensor_combined.gyro_rad} * imu_sample_new.delta_ang_dt;
-                        imu_sample_new.delta_vel_dt = sensor_combined.accelerometer_integral_dt * 1.e-6f;
-                        imu_sample_new.delta_vel = Vector3f{sensor_combined.accelerometer_m_s2} * imu_sample_new.delta_vel_dt;
+					_ekf.resetAccelBias();
 
-                        if (sensor_combined.accelerometer_clipping > 0) {
-                                imu_sample_new.delta_vel_clipping[0] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_X;
-                                imu_sample_new.delta_vel_clipping[1] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Y;
-                                imu_sample_new.delta_vel_clipping[2] = sensor_combined.accelerometer_clipping & sensor_combined_s::CLIPPING_Z;
-                        }
+					// reset bias learning
+					_accel_cal = {};
+				}
 
-                        imu_dt = sensor_combined.gyro_integral_dt;
+				if (_device_id_gyro != sensor_selection.gyro_device_id) {
 
-                        if (sensor_combined.accel_calibration_count != _accel_calibration_count) {
+					_device_id_gyro = sensor_selection.gyro_device_id;
 
-                                PX4_DEBUG("%d - resetting accelerometer bias", _instance);
+					_ekf.resetGyroBias();
 
-                                _ekf.resetAccelBias();
-                                _accel_calibration_count = sensor_combined.accel_calibration_count;
-
-                                // reset bias learning
-                                _accel_cal = {};
-                        }
-
-                        if (sensor_combined.gyro_calibration_count != _gyro_calibration_count) {
-
-                                PX4_DEBUG("%d - resetting rate gyro bias", _instance);
-
-                                _ekf.resetGyroBias();
-                                _gyro_calibration_count = sensor_combined.gyro_calibration_count;
-
-                                // reset bias learning
-                                _gyro_cal = {};
-                        }
-                }
-
-                if (_sensor_selection_sub.updated() || (_device_id_accel == 0 || _device_id_gyro == 0)) {
-                        sensor_selection_s sensor_selection;
-
-                        if (_sensor_selection_sub.copy(&sensor_selection)) {
-                                if (_device_id_accel != sensor_selection.accel_device_id) {
-
-                                        _device_id_accel = sensor_selection.accel_device_id;
-
-                                        _ekf.resetAccelBias();
-
-                                        // reset bias learning
-                                        _accel_cal = {};
-                                }
-
-                                if (_device_id_gyro != sensor_selection.gyro_device_id) {
-
-                                        _device_id_gyro = sensor_selection.gyro_device_id;
-
-                                        _ekf.resetGyroBias();
-
-                                        // reset bias learning
-                                        _gyro_cal = {};
-                                }
-                        }
-                }
-                break;
-        }
-}
-
-	if ((_imu_source == ImuSource::VehicleImuAi) && !imu_updated) {
-		ScheduleDelayed(20_ms);
+					// reset bias learning
+					_gyro_cal = {};
+				}
+			}
+		}
 	}
 
 	if (imu_updated) {
-               const hrt_abstime sample_time = imu_sample_new.time_us;
+		const hrt_abstime now = imu_sample_new.time_us;
 
-               // push imu data into estimator
-               _ekf.setIMUData(imu_sample_new);
-               PublishAttitude(sample_time); // publish attitude immediately (uses quaternion from output predictor)
+		// Publish imu_sample_new to UDP (for AI mode monitoring) - only for primary IMU (0x14010c)
+		const uint32_t PRIMARY_IMU_ID = 0x14010c;
+		if (_device_id_accel == PRIMARY_IMU_ID) {
+			PublishImuSampleToUdp(imu_sample_new, now);
+		}
+
+		// If in AI mode (EKF2_IMU_SRC=1), try to receive processed IMU data from UDP listener
+		imuSample imu_to_use = imu_sample_new;
+		if (_param_ekf2_imu_src.get() == 1) {
+			imuSample received_imu = {};
+			if (ReceiveAiImuDataFromUdp(received_imu, now)) {
+				imu_to_use = received_imu;  // Use AI-processed IMU data
+				PX4_DEBUG("[EKF2 AI IMU] Using received AI-processed IMU data");
+			}
+		}
+
+		// push imu data into estimator
+		_ekf.setIMUData(imu_to_use);
+		PublishAttitude(now); // publish attitude immediately (uses quaternion from output predictor)
 
 		// integrate time to monitor time slippage
 		if (_start_time_us > 0) {
@@ -2413,6 +2217,292 @@ timestamps from the sensor topics.
 	PRINT_MODULE_USAGE_ARG("<instance>", "Specify desired estimator instance", false);
 #endif // !CONSTRAINED_FLASH
 	return 0;
+}
+
+namespace {
+// Helper to receive AI IMU feedback from UDP listener on port 14568
+void recv_ekf2_imu_udp_feedback(int &rx_socket, struct sockaddr_in &rx_addr, uint32_t &msg_count, hrt_abstime &last_log_time,
+                                 const hrt_abstime &timestamp) {
+    // Initialize receiver socket if needed
+    if (rx_socket < 0) {
+        rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (rx_socket < 0) {
+            PX4_ERR("[AI IMU RX] Socket creation failed");
+            return;
+        }
+        // Set non-blocking mode
+        int flags = fcntl(rx_socket, F_GETFL, 0);
+        fcntl(rx_socket, F_SETFL, flags | O_NONBLOCK);
+
+        // Set SO_REUSEADDR to allow reuse of port
+        int reuse = 1;
+        if (setsockopt(rx_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+            PX4_WARN("[AI IMU RX] setsockopt(SO_REUSEADDR) failed");
+        }
+
+        // Set large receive buffer to prevent packet loss
+        int recv_buf_size = 16 * 1024 * 1024;  // 16MB
+        if (setsockopt(rx_socket, SOL_SOCKET, SO_RCVBUF, &recv_buf_size, sizeof(recv_buf_size)) < 0) {
+            PX4_WARN("[AI IMU RX] setsockopt(SO_RCVBUF) failed");
+        }
+
+        memset(&rx_addr, 0, sizeof(rx_addr));
+        rx_addr.sin_family = AF_INET;
+        rx_addr.sin_port = htons(14568);
+        rx_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+        if (bind(rx_socket, (struct sockaddr *)&rx_addr, sizeof(rx_addr)) < 0) {
+            PX4_ERR("[AI IMU RX] Bind failed on port 14568 (already in use?)");
+            close(rx_socket);
+            rx_socket = -1;
+            return;
+        }
+        PX4_INFO("[AI IMU RX] Initialized: listening on 127.0.0.1:14568 for AI IMU feedback");
+        msg_count = 0;
+        last_log_time = timestamp;
+    }
+
+    // Drain all available packets in non-blocking mode (loop to avoid buildup)
+    struct __attribute__((packed)) {
+        uint64_t timestamp;
+        uint64_t timestamp_sample;
+        uint32_t accel_device_id;
+        uint32_t gyro_device_id;
+        float delta_angle[3];
+        float delta_velocity[3];
+        uint16_t delta_angle_dt;
+        uint16_t delta_velocity_dt;
+        uint8_t delta_velocity_clipping;
+        uint8_t accel_calibration_count;
+        uint8_t gyro_calibration_count;
+    } imu_feedback;
+    uint8_t buf[55] = {};
+    struct sockaddr_in src_addr{};
+    socklen_t src_len = sizeof(src_addr);
+
+    // Loop to drain all available packets instead of processing just one
+    int packets_received_this_cycle = 0;
+    while (packets_received_this_cycle < 50) {  // Safety limit: max 50 packets per call
+        ssize_t n = recvfrom(rx_socket, buf, 55, 0, (struct sockaddr *)&src_addr, &src_len);
+        if (n == 55) {
+            memcpy(&imu_feedback, buf, sizeof(imu_feedback));
+            msg_count++;
+            packets_received_this_cycle++;
+
+            // Log first packet received
+            if (msg_count == 1) {
+                PX4_INFO("[STARTUP] EKF2 RX: First packet received | ts=%llu us ([%.1f ms])",
+                         (unsigned long long)imu_feedback.timestamp, (double)(imu_feedback.timestamp / 1000.0));
+            }
+
+            // Log every 5000 packets received (not based on wall-clock time)
+            if (msg_count % 5000 == 0) {
+                double packet_time_ms = (imu_feedback.timestamp / 1000.0);  // Convert us to ms
+                PX4_INFO("[%.1f ms] EKF2 RX=%u packets | accel_id=0x%x | dt_v=%u us",
+                         packet_time_ms, msg_count, imu_feedback.accel_device_id, imu_feedback.delta_velocity_dt);
+            }
+        } else {
+            // No more packets available (non-blocking recv returned EAGAIN/EWOULDBLOCK)
+            break;
+        }
+    }
+}
+
+// Helper for modular UDP IMU telemetry sender
+void send_ekf2_imu_udp_packet(int &udp_socket, sockaddr_in &udp_addr, uint32_t &msg_count, hrt_abstime &last_log_time,
+                              const imuSample &imu, const hrt_abstime &timestamp,
+                              uint32_t accel_device_id, uint32_t gyro_device_id,
+                              uint8_t accel_cal_count, uint8_t gyro_cal_count) {
+    // Initialize socket if needed
+    if (udp_socket < 0) {
+        udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (udp_socket < 0) {
+            PX4_ERR("[IMU UDP] Socket creation failed");
+            return;
+        }
+        int flags = fcntl(udp_socket, F_GETFL, 0);
+        fcntl(udp_socket, F_SETFL, flags | O_NONBLOCK);
+        memset(&udp_addr, 0, sizeof(udp_addr));
+        udp_addr.sin_family = AF_INET;
+        udp_addr.sin_port = htons(14567);
+        udp_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        PX4_INFO("[IMU UDP] Initialized: sending EKF2 IMU data to 127.0.0.1:14567");
+        msg_count = 0;
+        last_log_time = timestamp;
+    }
+    struct __attribute__((packed)) {
+        uint64_t timestamp;
+        uint64_t timestamp_sample;
+        uint32_t accel_device_id;
+        uint32_t gyro_device_id;
+        float delta_angle[3];
+        float delta_velocity[3];
+        uint16_t delta_angle_dt;
+        uint16_t delta_velocity_dt;
+        uint8_t delta_velocity_clipping;
+        uint8_t accel_calibration_count;
+        uint8_t gyro_calibration_count;
+    } imu_packet;
+    imu_packet.timestamp = imu.time_us;
+    imu_packet.timestamp_sample = imu.time_us;
+    imu_packet.accel_device_id = accel_device_id;
+    imu_packet.gyro_device_id = gyro_device_id;
+    memcpy(imu_packet.delta_angle, &imu.delta_ang, sizeof(imu.delta_ang));
+    memcpy(imu_packet.delta_velocity, &imu.delta_vel, sizeof(imu.delta_vel));
+    imu_packet.delta_angle_dt = (uint16_t)(imu.delta_ang_dt * 1e6f);
+    imu_packet.delta_velocity_dt = (uint16_t)(imu.delta_vel_dt * 1e6f);
+    imu_packet.delta_velocity_clipping = imu.delta_vel_clipping[0] | imu.delta_vel_clipping[1] | imu.delta_vel_clipping[2];
+    imu_packet.accel_calibration_count = accel_cal_count;
+    imu_packet.gyro_calibration_count = gyro_cal_count;
+    ssize_t bytes_sent = sendto(udp_socket, &imu_packet, sizeof(imu_packet), 0,
+                                (struct sockaddr *)&udp_addr, sizeof(udp_addr));
+    (void)bytes_sent;
+    msg_count++;
+
+    // Log first packet sent
+    if (msg_count == 1) {
+        PX4_INFO("[STARTUP] EKF2 TX: First packet sent at [%.1f ms] | ts=%llu us",
+                 (double)(imu_packet.timestamp / 1000.0), (unsigned long long)imu_packet.timestamp);
+    }
+
+    // Log every 5000 packets sent (packet-count based, not wall-clock)
+    if (msg_count % 5000 == 0) {
+        double packet_time_ms = (imu_packet.timestamp / 1000.0);  // Convert us to ms
+        PX4_INFO("[%.1f ms] EKF2 TX=%u packets | dv=[%.4f,%.4f,%.4f] m/s | da=[%.4f,%.4f,%.4f] rad | dt_v=%u us",
+            packet_time_ms,
+            msg_count,
+            (double)imu.delta_vel(0), (double)imu.delta_vel(1), (double)imu.delta_vel(2),
+            (double)imu.delta_ang(0), (double)imu.delta_ang(1), (double)imu.delta_ang(2),
+            imu_packet.delta_velocity_dt);
+    }
+}
+} // namespace
+
+// Receive and parse 55-byte AI IMU data from UDP listener on port 14568
+bool EKF2::ReceiveAiImuDataFromUdp(imuSample &imu, const hrt_abstime &timestamp)
+{
+    // Initialize receiver socket if needed
+    if (_imu_rx_socket < 0) {
+        _imu_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (_imu_rx_socket < 0) {
+            PX4_ERR("[AI IMU RX] Socket creation failed");
+            return false;
+        }
+        // Set non-blocking mode
+        int flags = fcntl(_imu_rx_socket, F_GETFL, 0);
+        fcntl(_imu_rx_socket, F_SETFL, flags | O_NONBLOCK);
+
+        // Set SO_REUSEADDR to allow reuse of port
+        int reuse = 1;
+        if (setsockopt(_imu_rx_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+            PX4_WARN("[AI IMU RX] setsockopt(SO_REUSEADDR) failed");
+        }
+
+        // Increase socket receive buffer to avoid packet loss
+        int recv_buf_size = 16 * 1024 * 1024;  // 16MB
+        if (setsockopt(_imu_rx_socket, SOL_SOCKET, SO_RCVBUF, &recv_buf_size, sizeof(recv_buf_size)) < 0) {
+            PX4_WARN("[AI IMU RX] setsockopt(SO_RCVBUF) failed");
+        }
+
+        // Bind to port 14568 to receive data from listener
+        memset(&_imu_rx_addr, 0, sizeof(_imu_rx_addr));
+        _imu_rx_addr.sin_family = AF_INET;
+        _imu_rx_addr.sin_port = htons(14568);
+        _imu_rx_addr.sin_addr.s_addr = htonl(INADDR_ANY);  // Listen on any interface
+
+        if (bind(_imu_rx_socket, (struct sockaddr *)&_imu_rx_addr, sizeof(_imu_rx_addr)) < 0) {
+            PX4_ERR("[AI IMU RX] Bind failed on port 14568: %s", strerror(errno));
+            close(_imu_rx_socket);
+            _imu_rx_socket = -1;
+            return false;
+        }
+        PX4_INFO("[AI IMU RX] Initialized: listening on 0.0.0.0:14568 for AI-processed IMU data");
+        _imu_rx_msg_count = 0;
+        _imu_rx_last_log_time = timestamp;
+    }
+
+    // Try to receive 55-byte AI IMU packet
+    struct __attribute__((packed)) {
+        uint64_t timestamp;
+        uint64_t timestamp_sample;
+        uint32_t accel_device_id;
+        uint32_t gyro_device_id;
+        float delta_angle[3];
+        float delta_velocity[3];
+        uint16_t delta_angle_dt;
+        uint16_t delta_velocity_dt;
+        uint8_t delta_velocity_clipping;
+        uint8_t accel_calibration_count;
+        uint8_t gyro_calibration_count;
+    } ai_imu_packet;
+
+    uint8_t buf[55] = {};
+    struct sockaddr_in src_addr{};
+    socklen_t src_len = sizeof(src_addr);
+    ssize_t n = recvfrom(_imu_rx_socket, buf, sizeof(buf), 0, (struct sockaddr *)&src_addr, &src_len);
+
+    if (n == 55) {
+        memcpy(&ai_imu_packet, buf, sizeof(ai_imu_packet));
+        _imu_rx_msg_count++;
+
+        // Log on first successful RX
+        if (_imu_rx_msg_count == 1) {
+            PX4_INFO("[AI IMU RX] ===== FIRST PACKET RECEIVED ===== | count=%u | ts=%lu us | dv=[%.4f,%.4f,%.4f]",
+                _imu_rx_msg_count, (unsigned long)ai_imu_packet.timestamp_sample,
+                (double)ai_imu_packet.delta_velocity[0], (double)ai_imu_packet.delta_velocity[1], (double)ai_imu_packet.delta_velocity[2]);
+        }
+
+        // Convert received packet to imuSample
+        imu.time_us = ai_imu_packet.timestamp_sample;
+        imu.delta_ang_dt = ai_imu_packet.delta_angle_dt * 1e-6f;
+        imu.delta_ang = Vector3f{ai_imu_packet.delta_angle[0], ai_imu_packet.delta_angle[1], ai_imu_packet.delta_angle[2]};
+        imu.delta_vel_dt = ai_imu_packet.delta_velocity_dt * 1e-6f;
+        imu.delta_vel = Vector3f{ai_imu_packet.delta_velocity[0], ai_imu_packet.delta_velocity[1], ai_imu_packet.delta_velocity[2]};
+
+        imu.delta_vel_clipping[0] = ai_imu_packet.delta_velocity_clipping & 0x01;
+        imu.delta_vel_clipping[1] = (ai_imu_packet.delta_velocity_clipping >> 1) & 0x01;
+        imu.delta_vel_clipping[2] = (ai_imu_packet.delta_velocity_clipping >> 2) & 0x01;
+
+        // Log periodically
+        if ((timestamp - _imu_rx_last_log_time) > 5_s) {
+            PX4_INFO("[AI IMU RX] Received %u packets | last: ts=%lu us, dv=[%.4f,%.4f,%.4f] m/s, da=[%.4f,%.4f,%.4f] rad",
+                _imu_rx_msg_count, (unsigned long)ai_imu_packet.timestamp_sample,
+                (double)ai_imu_packet.delta_velocity[0], (double)ai_imu_packet.delta_velocity[1], (double)ai_imu_packet.delta_velocity[2],
+                (double)ai_imu_packet.delta_angle[0], (double)ai_imu_packet.delta_angle[1], (double)ai_imu_packet.delta_angle[2]);
+            _imu_rx_last_log_time = timestamp;
+        }
+
+        return true;
+    } else if (n > 0 && n != 55) {
+        PX4_WARN("[AI IMU RX] Got %zd bytes (expected 55)", n);
+    } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        PX4_ERR("[AI IMU RX] recvfrom error: %s", strerror(errno));
+    }
+
+    return false;
+}
+
+void EKF2::PublishImuSampleToUdp(const imuSample &imu, const hrt_abstime &timestamp)
+{
+    // Only send if EKF2_IMU_SRC=1 (AI mode)
+    if (_param_ekf2_imu_src.get() != 1) {
+        // Close sockets if they were open but mode changed
+        if (_imu_udp_socket >= 0) {
+            close(_imu_udp_socket);
+            _imu_udp_socket = -1;
+        }
+        if (_imu_rx_socket >= 0) {
+            close(_imu_rx_socket);
+            _imu_rx_socket = -1;
+            PX4_INFO("[IMU UDP] Closed: EKF2_IMU_SRC changed from 1");
+        }
+        return;
+    }
+    // Call modular UDP sender
+    send_ekf2_imu_udp_packet(_imu_udp_socket, _imu_udp_addr, _imu_udp_msg_count, _imu_udp_last_log_time,
+                             imu, timestamp, _device_id_accel, _device_id_gyro, _accel_calibration_count, _gyro_calibration_count);
+    // Call modular UDP receiver for feedback
+    recv_ekf2_imu_udp_feedback(_imu_rx_socket, _imu_rx_addr, _imu_rx_msg_count, _imu_rx_last_log_time, timestamp);
 }
 
 extern "C" __EXPORT int ekf2_main(int argc, char *argv[])

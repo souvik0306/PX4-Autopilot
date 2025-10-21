@@ -47,6 +47,11 @@
 #include "EKF2Selector.hpp"
 
 #include <float.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <containers/LockGuard.hpp>
 #include <drivers/drv_hrt.h>
@@ -168,6 +173,11 @@ private:
 	void UpdateGyroCalibration(const hrt_abstime &timestamp);
 	void UpdateMagCalibration(const hrt_abstime &timestamp);
 
+	// UDP telemetry helper for AI mode monitoring
+	void PublishImuSampleToUdp(const imuSample &imu, const hrt_abstime &timestamp);
+
+	// UDP AI IMU data receiver
+	bool ReceiveAiImuDataFromUdp(imuSample &imu, const hrt_abstime &timestamp);
 
 	/*
 	 * Calculate filtered WGS84 height from estimated AMSL height
@@ -260,28 +270,29 @@ private:
 	uORB::Subscription _vehicle_gps_position_sub{ORB_ID(vehicle_gps_position)};
 	uORB::Subscription _vehicle_land_detected_sub{ORB_ID(vehicle_land_detected)};
 
-       enum class ImuSource : uint8_t {
-               SensorCombined,
-               VehicleImu,
-               VehicleImuAi,
-       };
-
-       uORB::SubscriptionCallbackWorkItem _sensor_combined_sub{this, ORB_ID(sensor_combined)};
-       uORB::SubscriptionCallbackWorkItem _vehicle_imu_sub{this, ORB_ID(vehicle_imu)};
-       uORB::SubscriptionCallbackWorkItem _vehicle_imu_ai_sub{this, ORB_ID(vehicle_imu_ai)};
+	uORB::SubscriptionCallbackWorkItem _sensor_combined_sub{this, ORB_ID(sensor_combined)};
+	uORB::SubscriptionCallbackWorkItem _vehicle_imu_sub{this, ORB_ID(vehicle_imu)};
+	uORB::Subscription _vehicle_imu_ai_sub{ORB_ID(vehicle_imu_ai)};
 
 	uORB::SubscriptionMultiArray<distance_sensor_s> _distance_sensor_subs{ORB_ID::distance_sensor};
 	int _distance_sensor_selected{-1}; // because we can have several distance sensor instances with different orientations
 	unsigned _distance_sensor_last_generation{0};
 
-       bool _callback_registered{false};
-       ImuSource _imu_source{ImuSource::SensorCombined};
-	bool _vehicle_imu_ai_missing_warned{false};
-	hrt_abstime _vehicle_imu_ai_last_update{0};
-	hrt_abstime _vehicle_imu_ai_switch_time{0};
-	hrt_abstime _vehicle_imu_ai_retry_time{0};
-	bool _vehicle_imu_ai_available_logged{false};
-	bool _vehicle_imu_ai_stale_warned{false};
+	bool _callback_registered{false};
+
+	hrt_abstime _last_update_time{}; // Tracks the last time vehicle_imu_ai was polled
+
+	// UDP telemetry for AI mode monitoring (port 14567 TX, 14568 RX)
+	int _imu_udp_socket{-1};
+	struct sockaddr_in _imu_udp_addr{};
+	uint32_t _imu_udp_msg_count{0};
+	hrt_abstime _imu_udp_last_log_time{0};
+
+	// UDP receiver for AI IMU feedback from listener (port 14568)
+	int _imu_rx_socket{-1};
+	struct sockaddr_in _imu_rx_addr{};
+	uint32_t _imu_rx_msg_count{0};
+	hrt_abstime _imu_rx_last_log_time{0};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};
@@ -326,11 +337,11 @@ private:
 	Ekf _ekf;
 
 	parameters *_params;	///< pointer to ekf parameter struct (located in _ekf class instance)
-	uORB::SubscriptionCallbackWorkItem *imuCallbackSubscription(ImuSource source);
 
 	DEFINE_PARAMETERS(
 		(ParamExtInt<px4::params::EKF2_PREDICT_US>) _param_ekf2_predict_us,
 		(ParamInt<px4::params::EKF2_IMU_SRC>) _param_ekf2_imu_src,
+
 		(ParamExtFloat<px4::params::EKF2_MAG_DELAY>)
 		_param_ekf2_mag_delay,	///< magnetometer measurement delay relative to the IMU (mSec)
 		(ParamExtFloat<px4::params::EKF2_BARO_DELAY>)
