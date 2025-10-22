@@ -72,12 +72,14 @@ px4_add_module(
 		EKF/terrain_estimator.cpp
 		EKF/utils.cpp
 		EKF/vel_pos_fusion.cpp
-		EKF/zero_velocity_update.cpp
+                EKF/zero_velocity_update.cpp
 
-		EKF2.cpp
-		EKF2.hpp
-		EKF2Selector.cpp
-		EKF2Selector.hpp
+                EKF2.cpp
+                EKF2.hpp
+                ekf2_imu_udp_bridge.cpp
+                ekf2_imu_udp_bridge.hpp
+                EKF2Selector.cpp
+                EKF2Selector.hpp
 
 	DEPENDS
 		geo

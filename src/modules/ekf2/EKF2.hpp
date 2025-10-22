@@ -45,10 +45,10 @@
 #include "Utility/PreFlightChecker.hpp"
 
 #include "EKF2Selector.hpp"
+#include "ekf2_imu_udp_bridge.hpp"
 
 #include <float.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -282,17 +282,7 @@ private:
 
 	hrt_abstime _last_update_time{}; // Tracks the last time vehicle_imu_ai was polled
 
-	// UDP telemetry for AI mode monitoring (port 14567 TX, 14568 RX)
-	int _imu_udp_socket{-1};
-	struct sockaddr_in _imu_udp_addr{};
-	uint32_t _imu_udp_msg_count{0};
-	hrt_abstime _imu_udp_last_log_time{0};
-
-	// UDP receiver for AI IMU feedback from listener (port 14568)
-	int _imu_rx_socket{-1};
-	struct sockaddr_in _imu_rx_addr{};
-	uint32_t _imu_rx_msg_count{0};
-	hrt_abstime _imu_rx_last_log_time{0};
+        ekf2::udp::ImuUdpBridgeState _imu_udp_bridge{};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};

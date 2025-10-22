@@ -33,12 +33,6 @@
 
 #include "EKF2.hpp"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
 
 using namespace time_literals;
 using math::constrain;
@@ -521,17 +515,22 @@ void EKF2::Run()
 		}
 
 		// If in AI mode (EKF2_IMU_SRC=1), try to receive processed IMU data from UDP listener
-		imuSample imu_to_use = imu_sample_new;
-		if (_param_ekf2_imu_src.get() == 1) {
-			imuSample received_imu = {};
-			if (ReceiveAiImuDataFromUdp(received_imu, now)) {
-				imu_to_use = received_imu;  // Use AI-processed IMU data
-				PX4_DEBUG("[EKF2 AI IMU] Using received AI-processed IMU data");
-			}
-		}
+                bool use_ai_mode = (_param_ekf2_imu_src.get() == 1);
+                const imuSample *imu_ptr = &imu_sample_new;
+                imuSample received_imu{};
 
-		// push imu data into estimator
-		_ekf.setIMUData(imu_to_use);
+                if (use_ai_mode) {
+                        if (ReceiveAiImuDataFromUdp(received_imu, now)) {
+                                imu_ptr = &received_imu;
+                                PX4_DEBUG("[EKF2 AI IMU] Using received AI-processed IMU data");
+                        } else {
+                                // Wait for valid AI data before updating the estimator
+                                return;
+                        }
+                }
+
+                // push imu data into estimator
+                _ekf.setIMUData(*imu_ptr);
 		PublishAttitude(now); // publish attitude immediately (uses quaternion from output predictor)
 
 		// integrate time to monitor time slippage
@@ -2219,290 +2218,22 @@ timestamps from the sensor topics.
 	return 0;
 }
 
-namespace {
-// Helper to receive AI IMU feedback from UDP listener on port 14568
-void recv_ekf2_imu_udp_feedback(int &rx_socket, struct sockaddr_in &rx_addr, uint32_t &msg_count, hrt_abstime &last_log_time,
-                                 const hrt_abstime &timestamp) {
-    // Initialize receiver socket if needed
-    if (rx_socket < 0) {
-        rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-        if (rx_socket < 0) {
-            PX4_ERR("[AI IMU RX] Socket creation failed");
-            return;
-        }
-        // Set non-blocking mode
-        int flags = fcntl(rx_socket, F_GETFL, 0);
-        fcntl(rx_socket, F_SETFL, flags | O_NONBLOCK);
-
-        // Set SO_REUSEADDR to allow reuse of port
-        int reuse = 1;
-        if (setsockopt(rx_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-            PX4_WARN("[AI IMU RX] setsockopt(SO_REUSEADDR) failed");
-        }
-
-        // Set large receive buffer to prevent packet loss
-        int recv_buf_size = 16 * 1024 * 1024;  // 16MB
-        if (setsockopt(rx_socket, SOL_SOCKET, SO_RCVBUF, &recv_buf_size, sizeof(recv_buf_size)) < 0) {
-            PX4_WARN("[AI IMU RX] setsockopt(SO_RCVBUF) failed");
-        }
-
-        memset(&rx_addr, 0, sizeof(rx_addr));
-        rx_addr.sin_family = AF_INET;
-        rx_addr.sin_port = htons(14568);
-        rx_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-        if (bind(rx_socket, (struct sockaddr *)&rx_addr, sizeof(rx_addr)) < 0) {
-            PX4_ERR("[AI IMU RX] Bind failed on port 14568 (already in use?)");
-            close(rx_socket);
-            rx_socket = -1;
-            return;
-        }
-        PX4_INFO("[AI IMU RX] Initialized: listening on 127.0.0.1:14568 for AI IMU feedback");
-        msg_count = 0;
-        last_log_time = timestamp;
-    }
-
-    // Drain all available packets in non-blocking mode (loop to avoid buildup)
-    struct __attribute__((packed)) {
-        uint64_t timestamp;
-        uint64_t timestamp_sample;
-        uint32_t accel_device_id;
-        uint32_t gyro_device_id;
-        float delta_angle[3];
-        float delta_velocity[3];
-        uint16_t delta_angle_dt;
-        uint16_t delta_velocity_dt;
-        uint8_t delta_velocity_clipping;
-        uint8_t accel_calibration_count;
-        uint8_t gyro_calibration_count;
-    } imu_feedback;
-    uint8_t buf[55] = {};
-    struct sockaddr_in src_addr{};
-    socklen_t src_len = sizeof(src_addr);
-
-    // Loop to drain all available packets instead of processing just one
-    int packets_received_this_cycle = 0;
-    while (packets_received_this_cycle < 50) {  // Safety limit: max 50 packets per call
-        ssize_t n = recvfrom(rx_socket, buf, 55, 0, (struct sockaddr *)&src_addr, &src_len);
-        if (n == 55) {
-            memcpy(&imu_feedback, buf, sizeof(imu_feedback));
-            msg_count++;
-            packets_received_this_cycle++;
-
-            // Log first packet received
-            if (msg_count == 1) {
-                PX4_INFO("[STARTUP] EKF2 RX: First packet received | ts=%llu us ([%.1f ms])",
-                         (unsigned long long)imu_feedback.timestamp, (double)(imu_feedback.timestamp / 1000.0));
-            }
-
-            // Log every 5000 packets received (not based on wall-clock time)
-            if (msg_count % 5000 == 0) {
-                double packet_time_ms = (imu_feedback.timestamp / 1000.0);  // Convert us to ms
-                PX4_INFO("[%.1f ms] EKF2 RX=%u packets | accel_id=0x%x | dt_v=%u us",
-                         packet_time_ms, msg_count, imu_feedback.accel_device_id, imu_feedback.delta_velocity_dt);
-            }
-        } else {
-            // No more packets available (non-blocking recv returned EAGAIN/EWOULDBLOCK)
-            break;
-        }
-    }
-}
-
-// Helper for modular UDP IMU telemetry sender
-void send_ekf2_imu_udp_packet(int &udp_socket, sockaddr_in &udp_addr, uint32_t &msg_count, hrt_abstime &last_log_time,
-                              const imuSample &imu, const hrt_abstime &timestamp,
-                              uint32_t accel_device_id, uint32_t gyro_device_id,
-                              uint8_t accel_cal_count, uint8_t gyro_cal_count) {
-    // Initialize socket if needed
-    if (udp_socket < 0) {
-        udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-        if (udp_socket < 0) {
-            PX4_ERR("[IMU UDP] Socket creation failed");
-            return;
-        }
-        int flags = fcntl(udp_socket, F_GETFL, 0);
-        fcntl(udp_socket, F_SETFL, flags | O_NONBLOCK);
-        memset(&udp_addr, 0, sizeof(udp_addr));
-        udp_addr.sin_family = AF_INET;
-        udp_addr.sin_port = htons(14567);
-        udp_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        PX4_INFO("[IMU UDP] Initialized: sending EKF2 IMU data to 127.0.0.1:14567");
-        msg_count = 0;
-        last_log_time = timestamp;
-    }
-    struct __attribute__((packed)) {
-        uint64_t timestamp;
-        uint64_t timestamp_sample;
-        uint32_t accel_device_id;
-        uint32_t gyro_device_id;
-        float delta_angle[3];
-        float delta_velocity[3];
-        uint16_t delta_angle_dt;
-        uint16_t delta_velocity_dt;
-        uint8_t delta_velocity_clipping;
-        uint8_t accel_calibration_count;
-        uint8_t gyro_calibration_count;
-    } imu_packet;
-    imu_packet.timestamp = imu.time_us;
-    imu_packet.timestamp_sample = imu.time_us;
-    imu_packet.accel_device_id = accel_device_id;
-    imu_packet.gyro_device_id = gyro_device_id;
-    memcpy(imu_packet.delta_angle, &imu.delta_ang, sizeof(imu.delta_ang));
-    memcpy(imu_packet.delta_velocity, &imu.delta_vel, sizeof(imu.delta_vel));
-    imu_packet.delta_angle_dt = (uint16_t)(imu.delta_ang_dt * 1e6f);
-    imu_packet.delta_velocity_dt = (uint16_t)(imu.delta_vel_dt * 1e6f);
-    imu_packet.delta_velocity_clipping = imu.delta_vel_clipping[0] | imu.delta_vel_clipping[1] | imu.delta_vel_clipping[2];
-    imu_packet.accel_calibration_count = accel_cal_count;
-    imu_packet.gyro_calibration_count = gyro_cal_count;
-    ssize_t bytes_sent = sendto(udp_socket, &imu_packet, sizeof(imu_packet), 0,
-                                (struct sockaddr *)&udp_addr, sizeof(udp_addr));
-    (void)bytes_sent;
-    msg_count++;
-
-    // Log first packet sent
-    if (msg_count == 1) {
-        PX4_INFO("[STARTUP] EKF2 TX: First packet sent at [%.1f ms] | ts=%llu us",
-                 (double)(imu_packet.timestamp / 1000.0), (unsigned long long)imu_packet.timestamp);
-    }
-
-    // Log every 5000 packets sent (packet-count based, not wall-clock)
-    if (msg_count % 5000 == 0) {
-        double packet_time_ms = (imu_packet.timestamp / 1000.0);  // Convert us to ms
-        PX4_INFO("[%.1f ms] EKF2 TX=%u packets | dv=[%.4f,%.4f,%.4f] m/s | da=[%.4f,%.4f,%.4f] rad | dt_v=%u us",
-            packet_time_ms,
-            msg_count,
-            (double)imu.delta_vel(0), (double)imu.delta_vel(1), (double)imu.delta_vel(2),
-            (double)imu.delta_ang(0), (double)imu.delta_ang(1), (double)imu.delta_ang(2),
-            imu_packet.delta_velocity_dt);
-    }
-}
-} // namespace
 
 // Receive and parse 55-byte AI IMU data from UDP listener on port 14568
 bool EKF2::ReceiveAiImuDataFromUdp(imuSample &imu, const hrt_abstime &timestamp)
 {
-    // Initialize receiver socket if needed
-    if (_imu_rx_socket < 0) {
-        _imu_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-        if (_imu_rx_socket < 0) {
-            PX4_ERR("[AI IMU RX] Socket creation failed");
-            return false;
-        }
-        // Set non-blocking mode
-        int flags = fcntl(_imu_rx_socket, F_GETFL, 0);
-        fcntl(_imu_rx_socket, F_SETFL, flags | O_NONBLOCK);
+    const bool ai_mode_active = (_param_ekf2_imu_src.get() == 1);
 
-        // Set SO_REUSEADDR to allow reuse of port
-        int reuse = 1;
-        if (setsockopt(_imu_rx_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-            PX4_WARN("[AI IMU RX] setsockopt(SO_REUSEADDR) failed");
-        }
-
-        // Increase socket receive buffer to avoid packet loss
-        int recv_buf_size = 16 * 1024 * 1024;  // 16MB
-        if (setsockopt(_imu_rx_socket, SOL_SOCKET, SO_RCVBUF, &recv_buf_size, sizeof(recv_buf_size)) < 0) {
-            PX4_WARN("[AI IMU RX] setsockopt(SO_RCVBUF) failed");
-        }
-
-        // Bind to port 14568 to receive data from listener
-        memset(&_imu_rx_addr, 0, sizeof(_imu_rx_addr));
-        _imu_rx_addr.sin_family = AF_INET;
-        _imu_rx_addr.sin_port = htons(14568);
-        _imu_rx_addr.sin_addr.s_addr = htonl(INADDR_ANY);  // Listen on any interface
-
-        if (bind(_imu_rx_socket, (struct sockaddr *)&_imu_rx_addr, sizeof(_imu_rx_addr)) < 0) {
-            PX4_ERR("[AI IMU RX] Bind failed on port 14568: %s", strerror(errno));
-            close(_imu_rx_socket);
-            _imu_rx_socket = -1;
-            return false;
-        }
-        PX4_INFO("[AI IMU RX] Initialized: listening on 0.0.0.0:14568 for AI-processed IMU data");
-        _imu_rx_msg_count = 0;
-        _imu_rx_last_log_time = timestamp;
-    }
-
-    // Try to receive 55-byte AI IMU packet
-    struct __attribute__((packed)) {
-        uint64_t timestamp;
-        uint64_t timestamp_sample;
-        uint32_t accel_device_id;
-        uint32_t gyro_device_id;
-        float delta_angle[3];
-        float delta_velocity[3];
-        uint16_t delta_angle_dt;
-        uint16_t delta_velocity_dt;
-        uint8_t delta_velocity_clipping;
-        uint8_t accel_calibration_count;
-        uint8_t gyro_calibration_count;
-    } ai_imu_packet;
-
-    uint8_t buf[55] = {};
-    struct sockaddr_in src_addr{};
-    socklen_t src_len = sizeof(src_addr);
-    ssize_t n = recvfrom(_imu_rx_socket, buf, sizeof(buf), 0, (struct sockaddr *)&src_addr, &src_len);
-
-    if (n == 55) {
-        memcpy(&ai_imu_packet, buf, sizeof(ai_imu_packet));
-        _imu_rx_msg_count++;
-
-        // Log on first successful RX
-        if (_imu_rx_msg_count == 1) {
-            PX4_INFO("[AI IMU RX] ===== FIRST PACKET RECEIVED ===== | count=%u | ts=%lu us | dv=[%.4f,%.4f,%.4f]",
-                _imu_rx_msg_count, (unsigned long)ai_imu_packet.timestamp_sample,
-                (double)ai_imu_packet.delta_velocity[0], (double)ai_imu_packet.delta_velocity[1], (double)ai_imu_packet.delta_velocity[2]);
-        }
-
-        // Convert received packet to imuSample
-        imu.time_us = ai_imu_packet.timestamp_sample;
-        imu.delta_ang_dt = ai_imu_packet.delta_angle_dt * 1e-6f;
-        imu.delta_ang = Vector3f{ai_imu_packet.delta_angle[0], ai_imu_packet.delta_angle[1], ai_imu_packet.delta_angle[2]};
-        imu.delta_vel_dt = ai_imu_packet.delta_velocity_dt * 1e-6f;
-        imu.delta_vel = Vector3f{ai_imu_packet.delta_velocity[0], ai_imu_packet.delta_velocity[1], ai_imu_packet.delta_velocity[2]};
-
-        imu.delta_vel_clipping[0] = ai_imu_packet.delta_velocity_clipping & 0x01;
-        imu.delta_vel_clipping[1] = (ai_imu_packet.delta_velocity_clipping >> 1) & 0x01;
-        imu.delta_vel_clipping[2] = (ai_imu_packet.delta_velocity_clipping >> 2) & 0x01;
-
-        // Log periodically
-        if ((timestamp - _imu_rx_last_log_time) > 5_s) {
-            PX4_INFO("[AI IMU RX] Received %u packets | last: ts=%lu us, dv=[%.4f,%.4f,%.4f] m/s, da=[%.4f,%.4f,%.4f] rad",
-                _imu_rx_msg_count, (unsigned long)ai_imu_packet.timestamp_sample,
-                (double)ai_imu_packet.delta_velocity[0], (double)ai_imu_packet.delta_velocity[1], (double)ai_imu_packet.delta_velocity[2],
-                (double)ai_imu_packet.delta_angle[0], (double)ai_imu_packet.delta_angle[1], (double)ai_imu_packet.delta_angle[2]);
-            _imu_rx_last_log_time = timestamp;
-        }
-
-        return true;
-    } else if (n > 0 && n != 55) {
-        PX4_WARN("[AI IMU RX] Got %zd bytes (expected 55)", n);
-    } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-        PX4_ERR("[AI IMU RX] recvfrom error: %s", strerror(errno));
-    }
-
-    return false;
+    return ekf2::udp::ConsumeAiSample(_imu_udp_bridge, ai_mode_active, imu, timestamp);
 }
 
 void EKF2::PublishImuSampleToUdp(const imuSample &imu, const hrt_abstime &timestamp)
 {
-    // Only send if EKF2_IMU_SRC=1 (AI mode)
-    if (_param_ekf2_imu_src.get() != 1) {
-        // Close sockets if they were open but mode changed
-        if (_imu_udp_socket >= 0) {
-            close(_imu_udp_socket);
-            _imu_udp_socket = -1;
-        }
-        if (_imu_rx_socket >= 0) {
-            close(_imu_rx_socket);
-            _imu_rx_socket = -1;
-            PX4_INFO("[IMU UDP] Closed: EKF2_IMU_SRC changed from 1");
-        }
-        return;
-    }
-    // Call modular UDP sender
-    send_ekf2_imu_udp_packet(_imu_udp_socket, _imu_udp_addr, _imu_udp_msg_count, _imu_udp_last_log_time,
-                             imu, timestamp, _device_id_accel, _device_id_gyro, _accel_calibration_count, _gyro_calibration_count);
-    // Call modular UDP receiver for feedback
-    recv_ekf2_imu_udp_feedback(_imu_rx_socket, _imu_rx_addr, _imu_rx_msg_count, _imu_rx_last_log_time, timestamp);
+    const bool ai_mode_active = (_param_ekf2_imu_src.get() == 1);
+
+    ekf2::udp::PublishImuSample(_imu_udp_bridge, ai_mode_active, imu, timestamp,
+                                _device_id_accel, _device_id_gyro,
+                                _accel_calibration_count, _gyro_calibration_count);
 }
 
 extern "C" __EXPORT int ekf2_main(int argc, char *argv[])
