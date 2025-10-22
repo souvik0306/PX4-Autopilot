@@ -211,10 +211,36 @@ def main():
                 # Convert deltas to instantaneous rates
                 accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z = convert_to_rates(pkt)
 
-                # Send back the full 55-byte packet to EKF2 on port 14568
+                # Apply AI processing: add constant bias of +1.0 m/s² to linear acceleration
+                # This modifies the delta_velocity values in the packet
+                pkt_array = bytearray(data[:55])
+
+                # Reconstruct the packet with bias applied
+                # delta_velocity starts at offset 36 (timestamp(8) + timestamp_sample(8) +
+                # accel_device_id(4) + gyro_device_id(4) + delta_angle[3](12) = 36)
+                bias_accel = 10.0  # m/s² bias to add
+                dt_velocity_s = pkt['delta_velocity_dt'] / 1e6  # Convert to seconds
+
+                dv_offset = 36
+                if dt_velocity_s > 0:
+                    # Convert bias from acceleration to delta_velocity
+                    delta_velocity_bias = bias_accel * dt_velocity_s
+
+                    # Unpack delta_velocity values from packet
+                    dv_x, dv_y, dv_z = struct.unpack('<3f', pkt_array[dv_offset:dv_offset+12])
+
+                    # Add bias
+                    dv_x_biased = dv_x + delta_velocity_bias
+                    dv_y_biased = dv_y + delta_velocity_bias
+                    dv_z_biased = dv_z + delta_velocity_bias
+
+                    # Pack back into packet
+                    pkt_array[dv_offset:dv_offset+12] = struct.pack('<3f', dv_x_biased, dv_y_biased, dv_z_biased)
+
+                # Send back the modified 55-byte packet to EKF2 on port 14568
                 # (This is where you'd apply AI processing)
                 try:
-                    tx_result = tx_sock.sendto(data[:55], tx_addr)
+                    tx_result = tx_sock.sendto(bytes(pkt_array), tx_addr)
                     if tx_result == 55:
                         tx_count += 1
                     else:
@@ -231,8 +257,8 @@ def main():
                           f"| ACC=[{accel_x:.4f}, {accel_y:.4f}, {accel_z:.4f}] m/s² "
                           f"| GYRO=[{gyro_x:.4f}, {gyro_y:.4f}, {gyro_z:.4f}] rad/s")
 
-                # Log summary every 5000 packets (matching C++ behavior)
-                if tx_count % 5000 == 0 and tx_count > 0:
+                # Log summary: first packet and every 200th packet (matching EKF2 behavior)
+                if tx_count == 1 or (tx_count % 200 == 0 and tx_count > 0):
                     current_time = time.time()
                     elapsed = current_time - last_time
                     avg_rate = (rate_sum / rate_count) if rate_count > 0 else 0.0
@@ -246,6 +272,24 @@ def main():
                           f"Rate: {avg_rate:.1f} Hz")
                     print(f"  ACC=[{accel_x:.4f}, {accel_y:.4f}, {accel_z:.4f}] m/s² | "
                           f"GYRO=[{gyro_x:.4f}, {gyro_y:.4f}, {gyro_z:.4f}] rad/s")
+
+                    # Print AI processing info (bias applied)
+                    if dt_velocity_s > 0:
+                        # Compute original ACC values (before bias)
+                        dv_x_orig, dv_y_orig, dv_z_orig = struct.unpack('<3f', data[dv_offset:dv_offset+12])
+                        acc_x_orig = dv_x_orig / dt_velocity_s
+                        acc_y_orig = dv_y_orig / dt_velocity_s
+                        acc_z_orig = dv_z_orig / dt_velocity_s
+
+                        # Compute biased ACC values (after bias)
+                        delta_velocity_bias = bias_accel * dt_velocity_s
+                        acc_x_biased = (dv_x_orig + delta_velocity_bias) / dt_velocity_s
+                        acc_y_biased = (dv_y_orig + delta_velocity_bias) / dt_velocity_s
+                        acc_z_biased = (dv_z_orig + delta_velocity_bias) / dt_velocity_s
+
+                        print(f"[AI PROC] +{bias_accel:.1f} m/s² bias applied | "
+                              f"acc_orig=[{acc_x_orig:.4f}, {acc_y_orig:.4f}, {acc_z_orig:.4f}] m/s² -> "
+                              f"acc_biased=[{acc_x_biased:.4f}, {acc_y_biased:.4f}, {acc_z_biased:.4f}] m/s²")
 
                     last_time = current_time
                     rate_sum = 0.0
