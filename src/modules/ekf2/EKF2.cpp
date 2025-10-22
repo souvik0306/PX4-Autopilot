@@ -193,12 +193,8 @@ EKF2::~EKF2()
 	perf_free(_msg_missed_magnetometer_perf);
 	perf_free(_msg_missed_odometry_perf);
 	perf_free(_msg_missed_optical_flow_perf);
-
-	// Clean up UDP socket
-	if (_imu_udp_socket >= 0) {
-		close(_imu_udp_socket);
-		_imu_udp_socket = -1;
-	}
+	// Ensure UDP bridge resources are released
+	_imu_udp_bridge.reset();
 }
 
 bool EKF2::multi_init(int imu, int mag)
