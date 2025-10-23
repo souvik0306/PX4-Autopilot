@@ -82,10 +82,18 @@ bool EKF2_AI_Subscriber::init()
 		PX4_WARN("EKF2_AI_Subscriber: Failed to set SO_REUSEADDR: %s", strerror(errno));
 	}
 
-	// Set receive buffer size for high-frequency data
-	int rcvbuf = 65536; // 64KB receive buffer
+	// Set large receive buffer for high-frequency data (250Hz * 50 bytes = 12.5 KB/s)
+	// Use 256KB buffer to handle ~20 seconds of buffering
+	int rcvbuf = 262144; // 256KB receive buffer
 	if (setsockopt(_socket_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0) {
 		PX4_WARN("EKF2_AI_Subscriber: Failed to set SO_RCVBUF: %s", strerror(errno));
+	}
+
+	// Verify actual buffer size achieved
+	int actual_rcvbuf = 0;
+	socklen_t optlen = sizeof(actual_rcvbuf);
+	if (getsockopt(_socket_fd, SOL_SOCKET, SO_RCVBUF, &actual_rcvbuf, &optlen) == 0) {
+		PX4_INFO("EKF2_AI_Subscriber: SO_RCVBUF set to %d bytes (requested: %d)", actual_rcvbuf, rcvbuf);
 	}
 
 	// Bind to listen address
@@ -184,13 +192,16 @@ void EKF2_AI_Subscriber::receiverLoop()
 		                                  (struct sockaddr*)&sender_addr, &sender_len);
 
 		if (bytes_received < 0) {
-			   if (errno == EAGAIN) {
-				// No data available, continue
-				usleep(100); // 100µs sleep to prevent busy-waiting
+			if (errno == EAGAIN) {
+				// No data available - use minimal sleep to balance CPU vs latency
+				usleep(10); // 10µs sleep (allows ~100k checks/sec)
 				continue;
 			} else {
 				_socket_errors++;
-				PX4_ERR("EKF2_AI_Subscriber: recvfrom failed: %s", strerror(errno));
+				// Only log socket errors occasionally to avoid spam
+				if (_socket_errors.load() % 1000 == 1) {
+					PX4_ERR("EKF2_AI_Subscriber: recvfrom failed: %s", strerror(errno));
+				}
 				usleep(1000); // 1ms sleep on error
 				continue;
 			}
@@ -198,8 +209,11 @@ void EKF2_AI_Subscriber::receiverLoop()
 
 		if (bytes_received != sizeof(ImuUdpPacket)) {
 			_validation_errors++;
-			PX4_WARN("EKF2_AI_Subscriber: Invalid packet size: %zd (expected %zu)",
-			         bytes_received, sizeof(ImuUdpPacket));
+			// Only log size errors occasionally
+			if (_validation_errors.load() % 100 == 1) {
+				PX4_WARN("EKF2_AI_Subscriber: Invalid packet size: %zd (expected %zu)",
+				         bytes_received, sizeof(ImuUdpPacket));
+			}
 			continue;
 		}
 
@@ -207,26 +221,38 @@ void EKF2_AI_Subscriber::receiverLoop()
 		_total_packets_received++;
 		_stats_interval_packet_count++;
 
-		// Track first packet time
+		// Track first packet time (one-time log)
 		if (_first_packet_time_us == 0) {
 			_first_packet_time_us = rx_time;
-			// Log with wall-clock time for clarity
-			time_t now_sec = time(nullptr);
-			struct tm local_tm;
-			localtime_r(&now_sec, &local_tm);
-			char time_buf[32];
-			strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &local_tm);
-			PX4_INFO("EKF2_AI_Subscriber: First packet received at %s (wall time), timestamp_us=%" PRIu64 ", t=%.3f s from boot",
-			         time_buf, rx_packet.timestamp_us, (double)rx_time/1e6);
+			char addr_buf[INET_ADDRSTRLEN];
+			inet_ntop(AF_INET, &(sender_addr.sin_addr), addr_buf, sizeof(addr_buf));
+			PX4_INFO("EKF2_AI_Subscriber: First packet received - seq=%" PRIu32 ", timestamp_us=%" PRIu64 " from %s:%u",
+			         rx_packet.sequence, rx_packet.timestamp_us, addr_buf, ntohs(sender_addr.sin_port));
 		}
 
 		// Calculate latency
 		float latency_us = rx_time - rx_packet.timestamp_us;
 
-		// Validate packet
+		// Fast validation (CRC + latency check)
 		if (!validatePacket(rx_packet, latency_us)) {
 			continue; // Validation failed, packet already counted in error stats
 		}
+
+		// Update latency statistics (lock-free)
+		_latency_sum_us += latency_us;
+		if (latency_us > _max_latency_us) _max_latency_us = latency_us;
+		if (latency_us < _min_latency_us) _min_latency_us = latency_us;
+
+		// Simple sequence gap tracking (no complex wraparound logic for TX/RX test)
+		if (_last_sequence_received > 0) {
+			uint32_t expected_seq = _last_sequence_received + 1;
+
+			// Simple gap detection
+			if (rx_packet.sequence != expected_seq) {
+				_sequence_gaps++;
+			}
+		}
+		_last_sequence_received = rx_packet.sequence;
 
 		// Create extended packet with metadata
 		RxImuPacket ext_packet;
@@ -235,57 +261,9 @@ void EKF2_AI_Subscriber::receiverLoop()
 		ext_packet.latency_us = latency_us;
 		ext_packet.valid = true;
 
-		// Update latency statistics
-		_latency_sum_us += latency_us;
-		_max_latency_us = fmaxf(_max_latency_us, latency_us);
-		_min_latency_us = fminf(_min_latency_us, latency_us);
-
-		// Check for sequence gaps (with intelligent handling for wraparound and reset)
-		if (_last_sequence_received > 0) {
-			uint32_t expected_seq = _last_sequence_received + 1;
-
-			// Handle sequence number wraparound (uint32_t rollover)
-			bool is_gap = false;
-			if (rx_packet.sequence < _last_sequence_received) {
-				// Check if this is a wraparound or a significant backward jump
-				uint32_t backward_jump = _last_sequence_received - rx_packet.sequence;
-				if (backward_jump > 1000000) {  // Likely wraparound (very large backward jump)
-					// Accept as normal wraparound, reset tracking
-					expected_seq = rx_packet.sequence;
-				} else if (backward_jump > 10) { // Significant backward jump, likely restart
-					// Sequence reset detected (e.g., EKF restart), reset tracking
-					PX4_INFO("EKF2_AI_Subscriber: Sequence reset detected - Last: %" PRIu32 ", New: %" PRIu32,
-					         _last_sequence_received, rx_packet.sequence);
-					expected_seq = rx_packet.sequence;
-				} else {
-					// Small backward jump - this is a real gap
-					is_gap = true;
-				}
-			} else if (rx_packet.sequence != expected_seq) {
-				// Forward gap
-				is_gap = true;
-			}
-
-			if (is_gap) {
-				_sequence_gaps++;
-				// Only log significant gaps to avoid spam from occasional out-of-order packets
-				if ((rx_packet.sequence > expected_seq && (rx_packet.sequence - expected_seq) > 5) ||
-				    (rx_packet.sequence < expected_seq && (expected_seq - rx_packet.sequence) > 5)) {
-					PX4_WARN("EKF2_AI_Subscriber: Sequence gap detected - Expected: %" PRIu32 ", Got: %" PRIu32 " (gap: %d)",
-					         expected_seq, rx_packet.sequence, (int32_t)(rx_packet.sequence - expected_seq));
-				}
-			}
-		}
-		_last_sequence_received = rx_packet.sequence;
-
-		// Push to RX buffer (non-blocking, overwrites oldest)
-		pushToRxBuffer(ext_packet);
-
-		// Transfer from RX buffer to AI queue if space available
-		RxImuPacket transfer_packet;
-		if (popFromRxBuffer(transfer_packet)) {
-			pushToAiQueue(transfer_packet);
-		}
+		// Direct push to AI queue (skip RX buffer layer for TX/RX sanity check)
+		// This reduces latency and simplifies the data path
+		pushToAiQueue(ext_packet);
 	}
 
 	PX4_INFO("EKF2_AI_Subscriber: Receiver thread stopped");
@@ -296,9 +274,11 @@ bool EKF2_AI_Subscriber::validatePacket(const ImuUdpPacket &packet, float latenc
 	// Check latency threshold
 	if (latency_us > MAX_ACCEPTED_LATENCY_US) {
 		_packets_dropped_latency++;
-		if (_packets_dropped_latency % 100 == 1) { // Log every 100th drop to avoid spam
-			   PX4_WARN("EKF2_AI_Subscriber: Packet dropped due to high latency: %.2f ms (max: %.1f ms)",
-						(double)(latency_us/1000.0f), (double)(MAX_ACCEPTED_LATENCY_US/1000.0f));
+		// Minimal logging - only log first few and then every 1000th drop
+		uint64_t drops = _packets_dropped_latency.load();
+		if (drops <= 3 || drops % 1000 == 0) {
+			PX4_WARN("EKF2_AI_Subscriber: High latency packet dropped: %.2f ms (limit: %.1f ms, total drops: %" PRIu64 ")",
+			         (double)(latency_us/1000.0f), (double)(MAX_ACCEPTED_LATENCY_US/1000.0f), drops);
 		}
 		return false;
 	}
@@ -308,16 +288,25 @@ bool EKF2_AI_Subscriber::validatePacket(const ImuUdpPacket &packet, float latenc
 	                                         sizeof(ImuUdpPacket) - sizeof(uint16_t));
 	if (calculated_crc != packet.crc16) {
 		_packets_dropped_crc_error++;
-		PX4_WARN("EKF2_AI_Subscriber: CRC mismatch - Calculated: 0x%04X, Received: 0x%04X",
-		         calculated_crc, packet.crc16);
+		// Minimal logging - only log first few CRC errors
+		uint64_t crc_errors = _packets_dropped_crc_error.load();
+		if (crc_errors <= 3) {
+			PX4_WARN("EKF2_AI_Subscriber: CRC mismatch - Calculated: 0x%04X, Received: 0x%04X",
+			         calculated_crc, packet.crc16);
+		}
 		return false;
 	}
 
-	// Validate delta times
-	if (packet.delta_ang_dt <= 0.0f || packet.delta_vel_dt <= 0.0f) {
+	// Validate delta times (sanity check for corrupted data)
+	if (packet.delta_ang_dt <= 0.0f || packet.delta_vel_dt <= 0.0f ||
+	    packet.delta_ang_dt > 0.1f || packet.delta_vel_dt > 0.1f) {
 		_validation_errors++;
-			   PX4_WARN("EKF2_AI_Subscriber: Invalid delta times - gyro_dt: %.6f, accel_dt: %.6f",
-						(double)packet.delta_ang_dt, (double)packet.delta_vel_dt);
+		// Minimal logging
+		uint64_t val_errors = _validation_errors.load();
+		if (val_errors <= 3) {
+			PX4_WARN("EKF2_AI_Subscriber: Invalid delta times - gyro_dt: %.6f, accel_dt: %.6f",
+			         (double)packet.delta_ang_dt, (double)packet.delta_vel_dt);
+		}
 		return false;
 	}
 
@@ -453,59 +442,53 @@ void EKF2_AI_Subscriber::logStatistics()
 	}
 
 	// Get current buffer sizes
-	uint32_t rx_current = _rx_buffer_count.load();
 	uint32_t ai_current = _ai_queue_count.load();
 
 	// Calculate success rate
-	uint64_t total_drops = _packets_dropped_crc_error.load() + _packets_dropped_latency.load() +
-	                       _packets_dropped_rx_overflow.load();
+	uint64_t total_drops = _packets_dropped_crc_error.load() + _packets_dropped_latency.load();
 	float success_rate = 100.0f;
 	if (total_packets > 0) {
 		success_rate = 100.0f * (total_packets - total_drops) / total_packets;
 	}
 
-	// Comprehensive logging
-	PX4_INFO("=== EKF2_AI_Subscriber Statistics ===");
-	PX4_INFO("Time: %.1f s since start | %.2f s since last log",
-		  (double)time_since_start_s, (double)elapsed_s);
-	PX4_INFO("RX Rate: %.1f Hz (target: 250 Hz) | Success: %.1f%%",
-		  (double)rx_rate_hz, (double)success_rate);
+	// Streamlined logging for TX/RX sanity check
+	PX4_INFO("=== AI_SUB Stats [%.1f s] ===", (double)time_since_start_s);
+	PX4_INFO("RX: %.1f Hz | Success: %.2f%% | Total: %" PRIu64,
+	         (double)rx_rate_hz, (double)success_rate, total_packets);
 
-	PX4_INFO("Packets: Total %" PRIu64 " | CRC errors %" PRIu64 " | Latency drops %" PRIu64 " | RX overflows %" PRIu64,
-	         total_packets, _packets_dropped_crc_error.load(),
-	         _packets_dropped_latency.load(), _packets_dropped_rx_overflow.load());
-
-	PX4_INFO("RX Buffer: %u/%u (max: %u) | Overruns: %" PRIu64,
-	         rx_current, (uint32_t)RX_RING_BUFFER_SIZE, _rx_buffer_max_size,
-	         _rx_buffer_overruns.load());
+	PX4_INFO("Latency: avg %.0f µs | min %.0f µs | max %.0f µs",
+	         (double)avg_latency_us, (double)_min_latency_us, (double)_max_latency_us);
 
 	PX4_INFO("AI Queue: %u/%u (max: %u) | Drops: %" PRIu64,
 	         ai_current, (uint32_t)AI_INFERENCE_QUEUE_SIZE, _ai_queue_max_size,
 	         _ai_queue_drops.load());
 
-	PX4_INFO("Latency: avg %.1f µs | min %.1f µs | max %.1f µs (limit: %.0f µs)",
-		  (double)avg_latency_us, (double)_min_latency_us, (double)_max_latency_us, (double)MAX_ACCEPTED_LATENCY_US);
+	PX4_INFO("Sequence: Last %" PRIu32 " | Gaps: %" PRIu64,
+	         _last_sequence_received, _sequence_gaps.load());
 
-	PX4_INFO("Sequence: Last %" PRIu32 " | Gaps: %" PRIu64 " | Socket errors: %" PRIu64,
-	         _last_sequence_received, _sequence_gaps.load(), _socket_errors.load());
+	// Error summary (only if errors present)
+	uint64_t crc_errors = _packets_dropped_crc_error.load();
+	uint64_t latency_drops = _packets_dropped_latency.load();
+	uint64_t socket_errs = _socket_errors.load();
+	uint64_t val_errs = _validation_errors.load();
 
-	// Warnings for anomalies
+	if (crc_errors > 0 || latency_drops > 0 || socket_errs > 0 || val_errs > 0) {
+		PX4_INFO("Errors: CRC %" PRIu64 " | Latency %" PRIu64 " | Socket %" PRIu64 " | Validation %" PRIu64,
+		         crc_errors, latency_drops, socket_errs, val_errs);
+	}
+
+	// Critical warnings
 	if (success_rate < 95.0f) {
-		PX4_WARN("EKF2_AI_Subscriber: Low success rate: %.1f%% - Check network/sender", (double)success_rate);
+		PX4_WARN("AI_SUB: Low success rate: %.1f%% - Check network quality", (double)success_rate);
 	}
 
-	if (rx_rate_hz < 240.0f || rx_rate_hz > 260.0f) {
-		PX4_WARN("EKF2_AI_Subscriber: RX rate outside expected range: %.1f Hz", (double)rx_rate_hz);
+	if (rx_rate_hz < 200.0f && total_packets > 100) {
+		PX4_WARN("AI_SUB: Low RX rate: %.1f Hz (expected ~250 Hz)", (double)rx_rate_hz);
 	}
 
-	if (_max_latency_us > MAX_ACCEPTED_LATENCY_US * 0.8f) {
-		PX4_WARN("EKF2_AI_Subscriber: High max latency: %.1f ms (approaching limit)",
-			  (double)(_max_latency_us/1000.0f));
-	}
-
-	if (_ai_queue_drops.load() > 0) {
-		PX4_WARN("EKF2_AI_Subscriber: AI queue drops detected: %" PRIu64 " - Increase inference rate",
-		         _ai_queue_drops.load());
+	if (_sequence_gaps.load() > (total_packets / 10)) {
+		PX4_WARN("AI_SUB: High sequence gap rate: %" PRIu64 " gaps in %" PRIu64 " packets",
+		         _sequence_gaps.load(), total_packets);
 	}
 
 	// Reset interval statistics

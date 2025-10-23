@@ -33,17 +33,19 @@
 
 /**
  * @file EKF2_AI_Subscriber.hpp
- * Two-layer buffering AI subscriber for IMU data processing
+ * Optimized AI subscriber for IMU data reception and validation
  *
- * Architecture:
- * 1. RX Ring Buffer: 100 samples (400ms at 250Hz), non-blocking push/pop, overwrites oldest
- * 2. AI Inference Queue: 20 samples, FIFO policy, controlled by inference thread
+ * TX/RX Sanity Check Architecture:
+ * - Direct UDP receive → AI queue (single-layer buffering for minimal latency)
+ * - High-performance receiver thread with 10µs polling interval
+ * - Comprehensive statistics for throughput and ordering validation
  *
  * Features:
  * - UDP receiver on port 14567 at 250Hz
- * - Maximum accepted latency < 50ms
- * - Comprehensive statistics and error management
- * - Thread-safe operations for concurrent access
+ * - Large OS socket buffer (256KB) for burst handling
+ * - CRC16-CCITT validation with minimal logging overhead
+ * - Lock-free atomic operations for statistics
+ * - Simple sequence gap detection (no complex wraparound logic)
  */
 
 #ifndef EKF2_AI_SUBSCRIBER_HPP
@@ -81,8 +83,8 @@ class EKF2_AI_Subscriber
 {
 public:
 	// Buffer configuration
-	static constexpr size_t RX_RING_BUFFER_SIZE = 128;  // Power of 2, ~100 samples (512ms at 250Hz)
-	static constexpr size_t AI_INFERENCE_QUEUE_SIZE = 32; // Power of 2, ~20 samples
+	static constexpr size_t RX_RING_BUFFER_SIZE = 128;  // Power of 2, kept for compatibility (not used in TX/RX test)
+	static constexpr size_t AI_INFERENCE_QUEUE_SIZE = 256; // Power of 2, ~1 second buffer at 250Hz
 	static constexpr uint16_t LISTEN_PORT = 14567;
 	static constexpr float MAX_ACCEPTED_LATENCY_US = 50000.0f; // 50ms
 	static constexpr uint32_t STATS_LOG_INTERVAL_US = 1000000; // 1 second

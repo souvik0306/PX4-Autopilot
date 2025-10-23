@@ -107,7 +107,7 @@ bool EKF2_UdpPublisher::init()
 	_initialized = true;
 	_last_stats_log_time_us = hrt_absolute_time();
 
-	PX4_INFO("EKF2_UdpPublisher: Initialized successfully - Target: %s:%u", TARGET_IP, TARGET_PORT);
+	PX4_INFO("EKF2_UdpPublisher (%p): Initialized successfully - Target: %s:%u", this, TARGET_IP, TARGET_PORT);
 	return true;
 }
 
@@ -176,8 +176,20 @@ bool EKF2_UdpPublisher::publishSample(uint64_t timestamp_us,
 	// Track enqueue time for latency measurement
 	uint64_t enqueue_time = hrt_absolute_time();
 
+	// Log first 4 samples for sanity check (sequence and timestamp)
+	if (_stats.total_samples < 4) {
+		PX4_INFO("EKF2_UdpPublisher (%p): First samples -> seq=%" PRIu32 " ts=%" PRIu64,
+				 this, pkt.sequence, pkt.timestamp_us);
+		// Print full contents of the sample for inspection
+		PX4_INFO("EKF2_UdpPublisher (%p): sample seq=%" PRIu32 " gyro=(%.6f,%.6f,%.6f) accel=(%.6f,%.6f,%.6f) delta_ang_dt=%.6f delta_vel_dt=%.6f crc=0x%04X",
+				 this, pkt.sequence,
+				 (double)pkt.gyro_x, (double)pkt.gyro_y, (double)pkt.gyro_z,
+				 (double)pkt.accel_x, (double)pkt.accel_y, (double)pkt.accel_z,
+				 (double)pkt.delta_ang_dt, (double)pkt.delta_vel_dt,
+				 pkt.crc16);
+	}
+
 	// Send immediately (no buffering for lowest latency)
-	// Ring buffer is kept for future expansion if batching is needed
 	bool sent = sendPacket(pkt);
 
 	// Update statistics

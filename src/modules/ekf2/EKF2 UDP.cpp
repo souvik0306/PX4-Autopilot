@@ -288,16 +288,22 @@ void EKF2::Run()
 		// update parameters from storage
 		updateParams();
 
-		// Initialize UDP publisher on first parameter update
-		if (!_udp_publisher_initialized) {
-			_udp_publisher = std::make_unique<EKF2_UdpPublisher>();
-			if (_udp_publisher && _udp_publisher->init()) {
-				_udp_publisher_initialized = true;
-				PX4_INFO("[EKF2] UDP IMU Publisher initialized");
-			} else {
-				_udp_publisher_initialized = false;
-				PX4_WARN("[EKF2] Failed to initialize UDP IMU Publisher");
+		// Initialize UDP publisher on first parameter update for primary EKF2 instance only
+		if (_instance == 0) {
+			if (!_udp_publisher_initialized) {
+				_udp_publisher = std::make_unique<EKF2_UdpPublisher>();
+				if (_udp_publisher && _udp_publisher->init()) {
+					_udp_publisher_initialized = true;
+					PX4_INFO("[EKF2] UDP IMU Publisher initialized (instance 0)");
+				} else {
+					_udp_publisher_initialized = false;
+					PX4_WARN("[EKF2] Failed to initialize UDP IMU Publisher");
+				}
 			}
+		} else {
+			// For non-primary instances, ensure publisher isn't initialized
+			_udp_publisher_initialized = false;
+			_udp_publisher.reset();
 		}
 
 		// Initialize AI subscriber on first parameter update (when EKF2_IMU_SRC = 1)
@@ -551,19 +557,19 @@ void EKF2::Run()
 			   }
 
 			   // Process AI subscriber data if available
-			   if (_ai_subscriber && _ai_subscriber_initialized) {
-				   RxImuPacket ai_sample;
-				   if (_ai_subscriber->popAiSample(ai_sample)) {
-				   // Log AI data reception for monitoring
-				   PX4_DEBUG("[EKF2] AI sample received: seq=%" PRIu32 ", latency=%.1f µs",
-					     ai_sample.data.sequence, (double)ai_sample.latency_us);					   // TODO: Process AI-enhanced IMU data
-					   // For now, we just monitor that AI data is being received
-					   // Future implementation could replace imu_sample_new with AI-processed data
-				   }
+			//    if (_ai_subscriber && _ai_subscriber_initialized) {
+			// 	   RxImuPacket ai_sample;
+			// 	   if (_ai_subscriber->popAiSample(ai_sample)) {
+			// 	   // Log AI data reception for monitoring
+			// 	   PX4_DEBUG("[EKF2] AI sample received: seq=%" PRIu32 ", latency=%.1f µs",
+			// 		     ai_sample.data.sequence, (double)ai_sample.latency_us);					   // TODO: Process AI-enhanced IMU data
+			// 		   // For now, we just monitor that AI data is being received
+			// 		   // Future implementation could replace imu_sample_new with AI-processed data
+			// 	   }
 
-				   // Log AI subscriber statistics periodically
-				   _ai_subscriber->logStatistics();
-			   }
+			// 	   // Log AI subscriber statistics periodically
+			// 	   _ai_subscriber->logStatistics();
+			//    }
 		        }
 		// push imu data into estimator
 		_ekf.setIMUData(imu_sample_new);
