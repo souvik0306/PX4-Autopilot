@@ -73,7 +73,7 @@ namespace
 
 	static_assert(sizeof(AIBridgePacketV0) == 55, "Unexpected legacy AI IMU packet size");
 
-        // Current python helper layout (dt fields in microseconds)
+        // Current python helper layout (dt fields in microseconds, includes delta_angle_clipping)
         struct __attribute__((packed)) AIBridgePacketV1 {
                 uint64_t timestamp;
                 uint64_t timestamp_sample;
@@ -83,12 +83,13 @@ namespace
                 float delta_velocity[3];
                 uint16_t delta_angle_dt;    // microseconds
                 uint16_t delta_velocity_dt; // microseconds
+                uint8_t delta_angle_clipping;
                 uint8_t delta_velocity_clipping;
                 uint8_t accel_calibration_count;
                 uint8_t gyro_calibration_count;
         };
 
-        static_assert(sizeof(AIBridgePacketV1) == 55, "Unexpected AI IMU helper packet size");
+        static_assert(sizeof(AIBridgePacketV1) == 56, "Unexpected AI IMU helper packet size");
 }
 
 ImuAIBridge::ImuAIBridge() :
@@ -190,24 +191,23 @@ void ImuAIBridge::receive_ai_imu_data()
                         memcpy(&ai_imu_msg, recv_buffer, sizeof(vehicle_imu_ai_s));
                         parsed = true;
 
-                } else if (bytes_received == (ssize_t)sizeof(AIBridgePacketV1)) {
-                        AIBridgePacketV1 packet{};
-                        memcpy(&packet, recv_buffer, sizeof(packet));
+		} else if (bytes_received == (ssize_t)sizeof(AIBridgePacketV1)) {
+			AIBridgePacketV1 packet{};
+			memcpy(&packet, recv_buffer, sizeof(packet));
 
-                        ai_imu_msg.timestamp = packet.timestamp;
-                        ai_imu_msg.timestamp_sample = packet.timestamp_sample;
-                        ai_imu_msg.accel_device_id = packet.accel_device_id;
-                        ai_imu_msg.gyro_device_id = packet.gyro_device_id;
-                        memcpy(ai_imu_msg.delta_angle, packet.delta_angle, sizeof(packet.delta_angle));
-                        memcpy(ai_imu_msg.delta_velocity, packet.delta_velocity, sizeof(packet.delta_velocity));
-                        ai_imu_msg.delta_angle_dt = packet.delta_angle_dt;
-                        ai_imu_msg.delta_velocity_dt = packet.delta_velocity_dt;
-                        ai_imu_msg.delta_velocity_clipping = packet.delta_velocity_clipping;
-                        ai_imu_msg.accel_calibration_count = packet.accel_calibration_count;
-                        ai_imu_msg.gyro_calibration_count = packet.gyro_calibration_count;
-                        parsed = true;
-
-                } else if (bytes_received == (ssize_t)sizeof(AIBridgePacketV0)) {
+			ai_imu_msg.timestamp = packet.timestamp;
+			ai_imu_msg.timestamp_sample = packet.timestamp_sample;
+			ai_imu_msg.accel_device_id = packet.accel_device_id;
+			ai_imu_msg.gyro_device_id = packet.gyro_device_id;
+			memcpy(ai_imu_msg.delta_angle, packet.delta_angle, sizeof(packet.delta_angle));
+			memcpy(ai_imu_msg.delta_velocity, packet.delta_velocity, sizeof(packet.delta_velocity));
+			ai_imu_msg.delta_angle_dt = packet.delta_angle_dt;
+			ai_imu_msg.delta_velocity_dt = packet.delta_velocity_dt;
+			ai_imu_msg.delta_angle_clipping = packet.delta_angle_clipping;
+			ai_imu_msg.delta_velocity_clipping = packet.delta_velocity_clipping;
+			ai_imu_msg.accel_calibration_count = packet.accel_calibration_count;
+			ai_imu_msg.gyro_calibration_count = packet.gyro_calibration_count;
+			parsed = true;                } else if (bytes_received == (ssize_t)sizeof(AIBridgePacketV0)) {
                         AIBridgePacketV0 packet{};
                         memcpy(&packet, recv_buffer, sizeof(packet));
 
@@ -279,8 +279,13 @@ void ImuAIBridge::receive_ai_imu_data()
                 _vehicle_imu_ai_pub.publish(ai_imu_msg);
                 _msg_count++;
 
-                if ((_msg_count % 200) == 0) {
-                        PX4_DEBUG("AI IMU: count=%u, dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
+                if (_msg_count == 1) {
+                        PX4_INFO("AI IMU: First valid message received! dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
+                                  (double)ai_imu_msg.delta_velocity_dt * 1e-3,
+                                  (double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],
+                                  (double)ai_imu_msg.delta_angle[0], (double)ai_imu_msg.delta_angle[1], (double)ai_imu_msg.delta_angle[2]);
+                } else if ((_msg_count % 200) == 0) {
+                        PX4_INFO("AI IMU: count=%u, dt=%.3f ms, dv=[%.3f,%.3f,%.3f], da=[%.3f,%.3f,%.3f]",
                                   _msg_count,
                                   (double)ai_imu_msg.delta_velocity_dt * 1e-3,
                                   (double)ai_imu_msg.delta_velocity[0], (double)ai_imu_msg.delta_velocity[1], (double)ai_imu_msg.delta_velocity[2],

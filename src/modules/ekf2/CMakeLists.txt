@@ -78,8 +78,10 @@ px4_add_module(
 		EKF2.hpp
 		EKF2Selector.cpp
 		EKF2Selector.hpp
-
-	DEPENDS
+		EKF2_TcpPublisher.cpp
+		EKF2_TcpPublisher.hpp
+		EKF2_TcpSubscriber.cpp
+		EKF2_TcpSubscriber.hpp	DEPENDS
 		geo
 		hysteresis
 		perf

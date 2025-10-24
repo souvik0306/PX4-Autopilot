@@ -45,8 +45,18 @@
 #include "Utility/PreFlightChecker.hpp"
 
 #include "EKF2Selector.hpp"
+#include "EKF2_UdpPublisher.hpp"
+#include "EKF2_AI_Subscriber.hpp"
+#include "EKF2_TcpPublisher.hpp"
+#include "EKF2_TcpSubscriber.hpp"
 
 #include <float.h>
+#include <memory>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <containers/LockGuard.hpp>
 #include <drivers/drv_hrt.h>
@@ -168,6 +178,11 @@ private:
 	void UpdateGyroCalibration(const hrt_abstime &timestamp);
 	void UpdateMagCalibration(const hrt_abstime &timestamp);
 
+	// UDP telemetry helper for AI mode monitoring
+	void PublishImuSampleToUdp(const imuSample &imu, const hrt_abstime &timestamp);
+
+	// UDP AI IMU data receiver
+	bool ReceiveAiImuDataFromUdp(imuSample &imu, const hrt_abstime &timestamp);
 
 	/*
 	 * Calculate filtered WGS84 height from estimated AMSL height
@@ -238,6 +253,43 @@ private:
 	Vector3f _last_mag_calibration_published{};
 
 	hrt_abstime _last_sensor_bias_published{0};
+
+	// ======================= IMU DATA FLOW TRACKING =======================
+	// Comprehensive tracking to understand IMU sample flow, rate, and draining
+	struct ImuFlowTracking {
+		// Reception tracking
+		uint64_t total_samples_received{0};          ///< Total IMU samples received from vehicle_imu_sub or sensor_combined_sub
+		uint64_t total_samples_processed{0};         ///< Total samples fed to EKF (should match total_samples_received)
+		uint64_t last_sample_time_us{0};             ///< Timestamp of last received sample
+		uint64_t first_sample_time_us{0};            ///< Timestamp of first sample (for rate calculation)
+
+		// Timing analysis
+		float avg_sample_interval_us{0};             ///< Average time between consecutive samples
+		uint32_t min_sample_interval_us{UINT32_MAX}; ///< Minimum interval between samples
+		uint32_t max_sample_interval_us{0};          ///< Maximum interval between samples
+
+		// Sample data tracking
+		float last_delta_vel_magnitude{0};           ///< Magnitude of last delta_vel vector
+		float last_delta_ang_magnitude{0};           ///< Magnitude of last delta_ang vector
+
+		// Draining/consumption tracking
+		uint32_t skipped_samples{0};                 ///< Samples skipped (imu_updated=false in a cycle)
+		hrt_abstime last_draining_log_time{0};       ///< Last time draining stats were logged
+	} _imu_flow_tracking{};
+
+	// AI Mode IMU RX tracking
+	struct AiImuRxTracking {
+		uint64_t total_packets_received{0};          ///< Total AI IMU packets received from UDP
+		uint64_t total_packets_processed{0};         ///< Total AI packets processed by EKF
+		uint64_t packets_drained_this_cycle{0};      ///< Packets drained in most recent cycle
+		float avg_packets_per_cycle{0};              ///< Rolling average of packets per RX cycle
+		uint32_t max_packets_in_single_cycle{0};     ///< Maximum packets drained in one cycle
+
+		hrt_abstime last_reception_time{0};          ///< Last time a valid AI IMU packet was received
+		hrt_abstime first_reception_time{0};         ///< First time valid AI IMU packet received
+
+		hrt_abstime last_log_time{0};                ///< Last time stats were logged
+	} _ai_imu_rx_tracking{};
 	hrt_abstime _last_gps_status_published{0};
 
 	float _last_baro_bias_published{};
@@ -262,13 +314,43 @@ private:
 
 	uORB::SubscriptionCallbackWorkItem _sensor_combined_sub{this, ORB_ID(sensor_combined)};
 	uORB::SubscriptionCallbackWorkItem _vehicle_imu_sub{this, ORB_ID(vehicle_imu)};
-	uORB::SubscriptionCallbackWorkItem _vehicle_imu_ai_sub{this, ORB_ID(vehicle_imu_ai)};
+	uORB::Subscription _vehicle_imu_ai_sub{ORB_ID(vehicle_imu_ai)};
 
 	uORB::SubscriptionMultiArray<distance_sensor_s> _distance_sensor_subs{ORB_ID::distance_sensor};
 	int _distance_sensor_selected{-1}; // because we can have several distance sensor instances with different orientations
 	unsigned _distance_sensor_last_generation{0};
 
 	bool _callback_registered{false};
+
+	hrt_abstime _last_update_time{}; // Tracks the last time vehicle_imu_ai was polled
+
+	// UDP telemetry for AI mode monitoring (port 14567 TX, 14568 RX)
+	int _imu_udp_socket{-1};
+	struct sockaddr_in _imu_udp_addr{};
+	uint32_t _imu_udp_msg_count{0};
+	hrt_abstime _imu_udp_last_log_time{0};
+
+	// Efficient UDP publisher for IMU samples (250Hz)
+	std::unique_ptr<EKF2_UdpPublisher> _udp_publisher{nullptr};
+	bool _udp_publisher_initialized{false};
+
+	// AI subscriber for receiving processed IMU data (port 14567)
+	std::unique_ptr<EKF2_AI_Subscriber> _ai_subscriber{nullptr};
+	bool _ai_subscriber_initialized{false};
+
+	// TCP publisher for streaming IMU samples to AI client (port 14567)
+	std::unique_ptr<EKF2_TcpPublisher> _tcp_publisher{nullptr};
+	bool _tcp_publisher_initialized{false};
+
+	// TCP subscriber for receiving AI-processed IMU data (port 14568)
+	std::unique_ptr<EKF2_TcpSubscriber> _tcp_subscriber{nullptr};
+	bool _tcp_subscriber_initialized{false};
+
+	// UDP receiver for AI IMU feedback from listener (port 14568)
+	int _imu_rx_socket{-1};
+	struct sockaddr_in _imu_rx_addr{};
+	uint32_t _imu_rx_msg_count{0};
+	hrt_abstime _imu_rx_last_log_time{0};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};
@@ -317,6 +399,7 @@ private:
 	DEFINE_PARAMETERS(
 		(ParamExtInt<px4::params::EKF2_PREDICT_US>) _param_ekf2_predict_us,
 		(ParamInt<px4::params::EKF2_IMU_SRC>) _param_ekf2_imu_src,
+
 		(ParamExtFloat<px4::params::EKF2_MAG_DELAY>)
 		_param_ekf2_mag_delay,	///< magnetometer measurement delay relative to the IMU (mSec)
 		(ParamExtFloat<px4::params::EKF2_BARO_DELAY>)

@@ -58,7 +58,6 @@ EKF2::EKF2(bool multi_mode, const px4::wq_config_t &config, bool replay_mode):
 	_wind_pub(multi_mode ? ORB_ID(estimator_wind) : ORB_ID(wind)),
 	_params(_ekf.getParamHandle()),
 	_param_ekf2_predict_us(_params->filter_update_interval_us),
-	_param_ekf2_imu_src(),
 	_param_ekf2_mag_delay(_params->mag_delay_ms),
 	_param_ekf2_baro_delay(_params->baro_delay_ms),
 	_param_ekf2_gps_delay(_params->gps_delay_ms),
@@ -193,6 +192,20 @@ EKF2::~EKF2()
 	perf_free(_msg_missed_magnetometer_perf);
 	perf_free(_msg_missed_odometry_perf);
 	perf_free(_msg_missed_optical_flow_perf);
+
+	// Cleanup TCP components
+	if (_tcp_publisher) {
+		_tcp_publisher.reset();
+	}
+	if (_tcp_subscriber) {
+		_tcp_subscriber.reset();
+	}
+
+	// Cleanup AI subscriber
+	if (_ai_subscriber) {
+		_ai_subscriber->stop();
+		_ai_subscriber.reset();
+	}
 }
 
 bool EKF2::multi_init(int imu, int mag)
@@ -274,6 +287,14 @@ void EKF2::Run()
 		return;
 	}
 
+	// Log instance and parameter on first run
+	static bool first_run = true;
+	if (first_run) {
+		PX4_INFO("[EKF2] Starting Run() - instance=%d, EKF2_IMU_SRC=%d",
+		         _instance, _param_ekf2_imu_src.get());
+		first_run = false;
+	}
+
 	// check for parameter updates
 	if (_parameter_update_sub.updated() || !_callback_registered) {
 		// clear update
@@ -282,6 +303,97 @@ void EKF2::Run()
 
 		// update parameters from storage
 		updateParams();
+
+		// Initialize TCP publisher and subscriber for AI mode (EKF2_IMU_SRC = 1)
+		// TCP mode: PX4 publishes to port 14567, receives processed data on port 14568
+		// NOTE: Only initialize for primary EKF instance (_instance == 0) OR single-mode (_instance == -1)
+		if (_instance == 0 || _instance == -1) {
+			if (_param_ekf2_imu_src.get() == 1) {
+				PX4_INFO("[EKF2] TCP AI mode requested (instance=%d, EKF2_IMU_SRC=%d)",
+				         _instance, _param_ekf2_imu_src.get());
+
+				// Initialize TCP publisher
+				if (!_tcp_publisher_initialized) {
+					PX4_INFO("[EKF2] Attempting to initialize TCP Publisher...");
+					_tcp_publisher = std::make_unique<EKF2_TcpPublisher>();
+					if (_tcp_publisher && _tcp_publisher->init()) {
+						_tcp_publisher_initialized = true;
+						PX4_INFO("[EKF2] ✓ TCP IMU Publisher initialized on port 14567");
+					} else {
+						_tcp_publisher_initialized = false;
+						PX4_ERR("[EKF2] ✗ Failed to initialize TCP IMU Publisher");
+					}
+				}
+
+				// Initialize TCP subscriber
+				if (!_tcp_subscriber_initialized) {
+					PX4_INFO("[EKF2] Attempting to initialize TCP Subscriber...");
+					_tcp_subscriber = std::make_unique<EKF2_TcpSubscriber>();
+					if (_tcp_subscriber && _tcp_subscriber->init()) {
+						_tcp_subscriber_initialized = true;
+						PX4_INFO("[EKF2] ✓ TCP IMU Subscriber initialized on port 14568");
+					} else {
+						_tcp_subscriber_initialized = false;
+						PX4_ERR("[EKF2] ✗ Failed to initialize TCP IMU Subscriber");
+					}
+				}
+			} else {
+				// Clean up TCP components if not in TCP mode
+				if (_tcp_publisher_initialized) {
+					_tcp_publisher.reset();
+					_tcp_publisher_initialized = false;
+					PX4_INFO("[EKF2] TCP Publisher stopped - not in TCP AI mode");
+				}
+				if (_tcp_subscriber_initialized) {
+					_tcp_subscriber.reset();
+					_tcp_subscriber_initialized = false;
+					PX4_INFO("[EKF2] TCP Subscriber stopped - not in TCP AI mode");
+				}
+			}
+		} else {
+			PX4_INFO("[EKF2] Skipping TCP init for instance %d (not primary)", _instance);
+		}
+
+		// // Initialize UDP publisher on first parameter update for primary EKF2 instance only
+		// if (_instance == 0) {
+		// 	if (!_udp_publisher_initialized && _param_ekf2_imu_src.get() == 1) {
+		// 		_udp_publisher = std::make_unique<EKF2_UdpPublisher>();
+		// 		if (_udp_publisher && _udp_publisher->init()) {
+		// 			_udp_publisher_initialized = true;
+		// 			PX4_INFO("[EKF2] UDP IMU Publisher initialized (instance 0)");
+		// 		} else {
+		// 			_udp_publisher_initialized = false;
+		// 			PX4_WARN("[EKF2] Failed to initialize UDP IMU Publisher");
+		// 		}
+		// 	} else if (_udp_publisher_initialized && _param_ekf2_imu_src.get() != 1) {
+		// 		_udp_publisher.reset();
+		// 		_udp_publisher_initialized = false;
+		// 	}
+		// } else {
+		// 	// For non-primary instances, ensure publisher isn't initialized
+		// 	_udp_publisher_initialized = false;
+		// 	_udp_publisher.reset();
+		// }
+
+		// // Initialize AI subscriber on first parameter update (when EKF2_IMU_SRC = 1)
+		// if (!_ai_subscriber_initialized && _param_ekf2_imu_src.get() == 1) {
+		// 	_ai_subscriber = std::make_unique<EKF2_AI_Subscriber>();
+		// 	if (_ai_subscriber && _ai_subscriber->init()) {
+		// 		_ai_subscriber_initialized = true;
+		// 		PX4_INFO("[EKF2] AI Subscriber initialized - Listening for AI-processed IMU data");
+		// 	} else {
+		// 		_ai_subscriber_initialized = false;
+		// 		PX4_WARN("[EKF2] Failed to initialize AI Subscriber");
+		// 	}
+		// } else if (_ai_subscriber_initialized && _param_ekf2_imu_src.get() != 1) {
+		// 	// Stop AI subscriber if parameter changed to non-AI mode
+		// 	if (_ai_subscriber) {
+		// 		_ai_subscriber->stop();
+		// 		_ai_subscriber.reset();
+		// 		_ai_subscriber_initialized = false;
+		// 		PX4_INFO("[EKF2] AI Subscriber stopped - EKF2_IMU_SRC not in AI mode");
+		// 	}
+		// }
 
 		_ekf.set_min_required_gps_health_time(_param_ekf2_req_gps_h.get() * 1_s);
 
@@ -367,108 +479,46 @@ void EKF2::Run()
 	hrt_abstime imu_dt = 0; // for tracking time slip later
 
 	if (_multi_mode) {
-		// Select IMU source based on EKF2_IMU_SRC parameter
-		if (_param_ekf2_imu_src.get() == 1) {
-			// Use AI-processed IMU data
-			const unsigned last_generation = _vehicle_imu_ai_sub.get_last_generation();
-			vehicle_imu_ai_s imu;
-			imu_updated = _vehicle_imu_ai_sub.update(&imu);
+		const unsigned last_generation = _vehicle_imu_sub.get_last_generation();
+		vehicle_imu_s imu;
+		imu_updated = _vehicle_imu_sub.update(&imu);
 
-			if (imu_updated && (_vehicle_imu_ai_sub.get_last_generation() != last_generation + 1)) {
-				perf_count(_msg_missed_imu_perf);
+		if (imu_updated && (_vehicle_imu_sub.get_last_generation() != last_generation + 1)) {
+			perf_count(_msg_missed_imu_perf);
+		}
+
+		if (imu_updated) {
+			imu_sample_new.time_us = imu.timestamp_sample;
+			imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
+			imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
+			imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
+			imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+
+			if (imu.delta_velocity_clipping > 0) {
+				imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_X;
+				imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Y;
+				imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Z;
 			}
 
-			if (imu_updated) {
-				imu_sample_new.time_us = imu.timestamp_sample;
-			imu_sample_new.delta_ang_dt = imu.delta_angle_dt;
-                                imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-			imu_sample_new.delta_vel_dt = imu.delta_velocity_dt;
-                                imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
+			imu_dt = imu.delta_angle_dt;
 
-				if (imu.delta_velocity_clipping > 0) {
-					imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_X;
-					imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Y;
-					imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_ai_s::CLIPPING_Z;
-				}
+			if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
+				_device_id_accel = imu.accel_device_id;
+				_device_id_gyro = imu.gyro_device_id;
+				_accel_calibration_count = imu.accel_calibration_count;
+				_gyro_calibration_count = imu.gyro_calibration_count;
 
-			imu_dt = (hrt_abstime)(imu.delta_angle_dt * 1.e6f);
+			} else {
+				if ((imu.accel_calibration_count != _accel_calibration_count)
+				    || (imu.accel_device_id != _device_id_accel)) {
 
-				if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
+					PX4_DEBUG("%d - resetting accelerometer bias", _instance);
 					_device_id_accel = imu.accel_device_id;
-					_device_id_gyro = imu.gyro_device_id;
+
+					_ekf.resetAccelBias();
 					_accel_calibration_count = imu.accel_calibration_count;
-					_gyro_calibration_count = imu.gyro_calibration_count;
 
-				} else {
-					if ((imu.accel_calibration_count != _accel_calibration_count)
-					    || (imu.accel_device_id != _device_id_accel)) {
-
-						PX4_DEBUG("%d - resetting accelerometer bias", _instance);
-						_device_id_accel = imu.accel_device_id;
-
-						_ekf.resetAccelBias();
-						_accel_calibration_count = imu.accel_calibration_count;
-
-						// reset bias learning
-						_accel_cal = {};
-					}
-
-					if ((imu.gyro_calibration_count != _gyro_calibration_count)
-					    || (imu.gyro_device_id != _device_id_gyro)) {
-
-						PX4_DEBUG("%d - resetting rate gyro bias", _instance);
-						_device_id_gyro = imu.gyro_device_id;
-
-						_ekf.resetGyroBias();
-						_gyro_calibration_count = imu.gyro_calibration_count;
-
-						// reset bias learning
-						_gyro_cal = {};
-					}
-				}
-			}
-		} else {
-			// Use raw IMU data (default)
-			const unsigned last_generation = _vehicle_imu_sub.get_last_generation();
-			vehicle_imu_s imu;
-			imu_updated = _vehicle_imu_sub.update(&imu);
-
-			if (imu_updated && (_vehicle_imu_sub.get_last_generation() != last_generation + 1)) {
-				perf_count(_msg_missed_imu_perf);
-			}
-
-			if (imu_updated) {
-				imu_sample_new.time_us = imu.timestamp_sample;
-				imu_sample_new.delta_ang_dt = imu.delta_angle_dt * 1.e-6f;
-				imu_sample_new.delta_ang = Vector3f{imu.delta_angle};
-				imu_sample_new.delta_vel_dt = imu.delta_velocity_dt * 1.e-6f;
-				imu_sample_new.delta_vel = Vector3f{imu.delta_velocity};
-
-				if (imu.delta_velocity_clipping > 0) {
-					imu_sample_new.delta_vel_clipping[0] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_X;
-					imu_sample_new.delta_vel_clipping[1] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Y;
-					imu_sample_new.delta_vel_clipping[2] = imu.delta_velocity_clipping & vehicle_imu_s::CLIPPING_Z;
-				}
-
-				imu_dt = imu.delta_angle_dt;
-
-				if ((_device_id_accel == 0) || (_device_id_gyro == 0)) {
-					_device_id_accel = imu.accel_device_id;
-					_device_id_gyro = imu.gyro_device_id;
-					_accel_calibration_count = imu.accel_calibration_count;
-					_gyro_calibration_count = imu.gyro_calibration_count;
-
-				} else {
-					if ((imu.accel_calibration_count != _accel_calibration_count)
-					    || (imu.accel_device_id != _device_id_accel)) {
-
-						PX4_DEBUG("%d - resetting accelerometer bias", _instance);
-						_device_id_accel = imu.accel_device_id;
-
-						_ekf.resetAccelBias();
-						_accel_calibration_count = imu.accel_calibration_count;
-
-						// reset bias learning
+					// reset bias learning
 					_accel_cal = {};
 				}
 
@@ -485,7 +535,6 @@ void EKF2::Run()
 					_gyro_cal = {};
 				}
 			}
-		}
 		}
 
 	} else {
@@ -565,17 +614,134 @@ void EKF2::Run()
 	if (imu_updated) {
 		const hrt_abstime now = imu_sample_new.time_us;
 
-		// push imu data into estimator
-		_ekf.setIMUData(imu_sample_new);
+		// Determine which IMU data to use for EKF2
+		imuSample imu_sample_for_ekf;
+
+		// TCP AI Mode (EKF2_IMU_SRC = 1): Publish raw IMU to TCP, receive AI-processed data
+		// NOTE: Only instance 0 (or -1 in single mode) has TCP components initialized
+		if (_param_ekf2_imu_src.get() == 1 && (_instance == 0 || _instance == -1)) {
+			// Stage logging counter (every 250 samples = ~1 second at 250Hz)
+			static uint32_t ai_sample_count = 0;
+			ai_sample_count++;
+			bool log_this_sample = (ai_sample_count % 250 == 0);
+
+			// STAGE 1/5: Capture raw IMU data from sensor
+			imuSample imu_sample_raw = imu_sample_new;
+			if (log_this_sample) {
+				PX4_INFO("[AI 1/5] RAW ts=%llu gyro=[%.3f,%.3f,%.3f] acc=[%.3f,%.3f,%.3f]",
+				         (unsigned long long)imu_sample_raw.time_us,
+				         (double)(imu_sample_raw.delta_ang(0) / imu_sample_raw.delta_ang_dt),
+				         (double)(imu_sample_raw.delta_ang(1) / imu_sample_raw.delta_ang_dt),
+				         (double)(imu_sample_raw.delta_ang(2) / imu_sample_raw.delta_ang_dt),
+				         (double)(imu_sample_raw.delta_vel(0) / imu_sample_raw.delta_vel_dt),
+				         (double)(imu_sample_raw.delta_vel(1) / imu_sample_raw.delta_vel_dt),
+				         (double)(imu_sample_raw.delta_vel(2) / imu_sample_raw.delta_vel_dt));
+			}
+
+			// STAGE 2/5: Publish raw IMU to TCP port 14567 (for Python AI client)
+			bool published = false;
+			if (_tcp_publisher && _tcp_publisher_initialized) {
+				published = _tcp_publisher->publishSample(
+					imu_sample_raw.time_us,
+					imu_sample_raw.delta_ang,
+					imu_sample_raw.delta_ang_dt,
+					imu_sample_raw.delta_vel,
+					imu_sample_raw.delta_vel_dt);
+			}
+
+			if (log_this_sample) {
+				PX4_INFO("[AI 2/5] TCP Pub: %s", published ? "✓" : "✗");
+			}
+
+			// STAGE 3/5: Receive AI-processed sample from TCP subscriber (port 14568)
+			bool ai_sample_received = false;
+			EKF2_TcpSubscriber::AiProcessedSample ai_sample_from_tcp;
+
+			if (_tcp_subscriber && _tcp_subscriber_initialized) {
+				ai_sample_received = _tcp_subscriber->getAiSample(ai_sample_from_tcp);
+			}
+
+			if (log_this_sample) {
+				PX4_INFO("[AI 3/5] TCP Recv: %s seq=%u ts=%llu gyro=[%.3f,%.3f,%.3f]",
+				         ai_sample_received ? "✓" : "✗",
+				         ai_sample_from_tcp.sequence,
+				         (unsigned long long)ai_sample_from_tcp.timestamp_us,
+				         (double)ai_sample_from_tcp.gyro(0),
+				         (double)ai_sample_from_tcp.gyro(1),
+				         (double)ai_sample_from_tcp.gyro(2));
+			}
+
+			if (ai_sample_received) {
+				// STAGE 4/5: Build EKF sample from AI-processed data
+				bool delta_vel_clipping[3];
+				delta_vel_clipping[0] = imu_sample_raw.delta_vel_clipping[0];
+				delta_vel_clipping[1] = imu_sample_raw.delta_vel_clipping[1];
+				delta_vel_clipping[2] = imu_sample_raw.delta_vel_clipping[2];
+
+				imu_sample_for_ekf.time_us = ai_sample_from_tcp.timestamp_us;
+				imu_sample_for_ekf.delta_ang = ai_sample_from_tcp.gyro * ai_sample_from_tcp.delta_ang_dt;
+				imu_sample_for_ekf.delta_ang_dt = ai_sample_from_tcp.delta_ang_dt;
+				imu_sample_for_ekf.delta_vel = ai_sample_from_tcp.accel * ai_sample_from_tcp.delta_vel_dt;
+				imu_sample_for_ekf.delta_vel_dt = ai_sample_from_tcp.delta_vel_dt;
+
+				imu_sample_for_ekf.delta_vel_clipping[0] = delta_vel_clipping[0];
+				imu_sample_for_ekf.delta_vel_clipping[1] = delta_vel_clipping[1];
+				imu_sample_for_ekf.delta_vel_clipping[2] = delta_vel_clipping[2];
+
+				if (log_this_sample) {
+					PX4_INFO("[AI 4/5] EKF ts=%llu dt=%.3f gyro=[%.3f,%.3f,%.3f] acc=[%.3f,%.3f,%.3f]",
+					         (unsigned long long)imu_sample_for_ekf.time_us,
+					         (double)imu_sample_for_ekf.delta_ang_dt,
+					         (double)(imu_sample_for_ekf.delta_ang(0) / imu_sample_for_ekf.delta_ang_dt),
+					         (double)(imu_sample_for_ekf.delta_ang(1) / imu_sample_for_ekf.delta_ang_dt),
+					         (double)(imu_sample_for_ekf.delta_ang(2) / imu_sample_for_ekf.delta_ang_dt),
+					         (double)(imu_sample_for_ekf.delta_vel(0) / imu_sample_for_ekf.delta_vel_dt),
+					         (double)(imu_sample_for_ekf.delta_vel(1) / imu_sample_for_ekf.delta_vel_dt),
+					         (double)(imu_sample_for_ekf.delta_vel(2) / imu_sample_for_ekf.delta_vel_dt));
+				}
+			} else {
+				// No AI sample available yet, skip this cycle
+				if (log_this_sample) {
+					PX4_WARN("[AI 3/5] SKIPPING CYCLE - No AI data available");
+				}
+				return;
+			}
+		}
+		// else {
+		// 	// Normal mode OR non-primary instance: Use raw sensor data directly
+		// 	PX4_WARN("USING RAW IMU DATA - TCP components not initialized for instance %d", _instance);
+		// 	imu_sample_for_ekf = imu_sample_new;
+		// }
+
+		// STAGE 5/5: Push IMU data into estimator
+		if (_param_ekf2_imu_src.get() == 1 && (_instance == 0 || _instance == -1)) {
+			static uint32_t ekf_feed_count = 0;
+			ekf_feed_count++;
+			if (ekf_feed_count % 250 == 0) {
+				uint64_t stage5_time_us = hrt_absolute_time();
+				PX4_INFO("[AI 5/5] AI DATA TO EKF2 ts=%llu current_time=%llu "
+				         "gyro=[%.3f,%.3f,%.3f] acc=[%.3f,%.3f,%.3f]",
+				         (unsigned long long)imu_sample_for_ekf.time_us,
+				         (unsigned long long)stage5_time_us,
+				         (double)(imu_sample_for_ekf.delta_ang(0) / imu_sample_for_ekf.delta_ang_dt),
+				         (double)(imu_sample_for_ekf.delta_ang(1) / imu_sample_for_ekf.delta_ang_dt),
+				         (double)(imu_sample_for_ekf.delta_ang(2) / imu_sample_for_ekf.delta_ang_dt),
+				         (double)(imu_sample_for_ekf.delta_vel(0) / imu_sample_for_ekf.delta_vel_dt),
+				         (double)(imu_sample_for_ekf.delta_vel(1) / imu_sample_for_ekf.delta_vel_dt),
+				         (double)(imu_sample_for_ekf.delta_vel(2) / imu_sample_for_ekf.delta_vel_dt));
+			}
+		}
+
+		_ekf.setIMUData(imu_sample_for_ekf);
 		PublishAttitude(now); // publish attitude immediately (uses quaternion from output predictor)
 
 		// integrate time to monitor time slippage
 		if (_start_time_us > 0) {
 			_integrated_time_us += imu_dt;
-			_last_time_slip_us = (imu_sample_new.time_us - _start_time_us) - _integrated_time_us;
+			_last_time_slip_us = (imu_sample_for_ekf.time_us - _start_time_us) - _integrated_time_us;
 
 		} else {
-			_start_time_us = imu_sample_new.time_us;
+			_start_time_us = imu_sample_for_ekf.time_us;
 			_last_time_slip_us = 0;
 		}
 
@@ -690,6 +856,20 @@ void EKF2::Run()
 
 		// publish ekf2_timestamps
 		_ekf2_timestamps_pub.publish(ekf2_timestamps);
+
+		// Log TCP publisher/subscriber statistics periodically if EKF2_IMU_SRC == 1
+		// if (_param_ekf2_imu_src.get() == 1) {
+		// 	if (_tcp_publisher && _tcp_publisher_initialized) {
+		// 		_tcp_publisher->logStatistics();
+		// 	}
+		// 	if (_tcp_subscriber && _tcp_subscriber_initialized) {
+		// 		_tcp_subscriber->logStatistics();
+		// 	}
+		// }
+		// // Log UDP publisher statistics periodically only if EKF2_IMU_SRC == 1
+		// else if (_param_ekf2_imu_src.get() == 1 && _udp_publisher && _udp_publisher_initialized) {
+		// 	_udp_publisher->logStatistics();
+		// }
 	}
 
 	// re-schedule as backup timeout
