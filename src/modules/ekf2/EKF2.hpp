@@ -184,6 +184,27 @@ private:
 	// UDP AI IMU data receiver
 	bool ReceiveAiImuDataFromUdp(imuSample &imu, const hrt_abstime &timestamp);
 
+	// ======================= RAW IMU RING BUFFER HELPERS =======================
+	/**
+	 * Store a raw IMU sample in the ring buffer with timestamp for later matching
+	 * @param sample The raw IMU sample to store
+	 * @param timestamp_us The timestamp in microseconds for matching
+	 */
+	void storeRawImuSample(const imuSample &sample, uint64_t timestamp_us);
+
+	/**
+	 * Find a raw IMU sample in the ring buffer by timestamp
+	 * @param timestamp_us Target timestamp in microseconds
+	 * @param matched_sample Output parameter for the matched sample
+	 * @return true if a matching sample was found within tolerance, false otherwise
+	 */
+	bool findRawImuSampleByTimestamp(uint64_t timestamp_us, imuSample &matched_sample);
+
+	/**
+	 * Log matching statistics periodically
+	 */
+	void logImuMatchingStats();
+
 	/*
 	 * Calculate filtered WGS84 height from estimated AMSL height
 	 */
@@ -351,6 +372,32 @@ private:
 	struct sockaddr_in _imu_rx_addr{};
 	uint32_t _imu_rx_msg_count{0};
 	hrt_abstime _imu_rx_last_log_time{0};
+
+	// ======================= RAW IMU SAMPLE RING BUFFER =======================
+	// Ring buffer to store raw IMU samples for timestamp-based matching
+	// Allows matching AI-processed samples back to their original raw samples
+	static constexpr size_t RAW_IMU_RING_BUFFER_SIZE = 200; // Store last 200 samples (~800ms at 250Hz)
+	static constexpr uint64_t TIMESTAMP_MATCH_TOLERANCE_US = 5000; // 5ms tolerance for timestamp matching
+
+	struct RawImuSample {
+		uint64_t timestamp_us{0};
+		imuSample sample;
+		bool valid{false};
+	};
+
+	RawImuSample _raw_imu_ring_buffer[RAW_IMU_RING_BUFFER_SIZE];
+	size_t _raw_imu_ring_index{0};
+	uint64_t _raw_imu_samples_stored{0};
+
+	// Matching statistics
+	struct ImuMatchingStats {
+		uint64_t total_ai_samples_received{0};
+		uint64_t successful_matches{0};
+		uint64_t failed_matches_no_timestamp{0};
+		uint64_t failed_matches_expired{0};
+		uint64_t failed_matches_tolerance{0};
+		hrt_abstime last_log_time{0};
+	} _imu_matching_stats{};
 
 	hrt_abstime _last_event_flags_publish{0};
 	hrt_abstime _last_status_flags_publish{0};
