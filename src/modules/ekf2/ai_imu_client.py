@@ -257,6 +257,12 @@ class AIClient:
 
         For now, we pass through unchanged (identity transform)
         """
+        # # DEBUG: Log every 250th sample to check for sign issues
+        # if sample.sequence % 250 == 0:
+        #     print(f"[AI CLIENT] Sample {sample.sequence}: "
+        #           f"accel=[{sample.accel_x:.3f}, {sample.accel_y:.3f}, {sample.accel_z:.3f}] "
+        #           f"gyro=[{sample.gyro_x:.3f}, {sample.gyro_y:.3f}, {sample.gyro_z:.3f}]")
+
         # TODO: Implement actual AI processing here
         # For now, just pass through
         processed = sample
