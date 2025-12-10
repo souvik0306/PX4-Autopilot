@@ -277,8 +277,8 @@ void EKF2_TcpSubscriber::receivePackets()
 		_tcp_buffer_used += received;
 
 		// Process complete packets
-		while (_tcp_buffer_used >= sizeof(ImuUdpPacket)) {
-			ImuUdpPacket pkt;
+		while (_tcp_buffer_used >= sizeof(ImuNetworkPacket)) {
+			ImuNetworkPacket pkt;
 			memcpy(&pkt, _tcp_buffer, sizeof(pkt));
 
 			// Validate packet
@@ -353,7 +353,7 @@ void EKF2_TcpSubscriber::receivePackets()
 	}
 }
 
-bool EKF2_TcpSubscriber::validatePacket(const ImuUdpPacket &pkt) const
+bool EKF2_TcpSubscriber::validatePacket(const ImuNetworkPacket &pkt) const
 {
 	uint16_t calculated_crc = calculateCrc16(reinterpret_cast<const uint8_t *>(&pkt),
 	                          sizeof(pkt) - sizeof(pkt.crc16));

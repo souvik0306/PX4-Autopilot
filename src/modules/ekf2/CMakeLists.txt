@@ -82,10 +82,10 @@ px4_add_module(
 		EKF2_TcpPublisher.hpp
 		EKF2_TcpSubscriber.cpp
 		EKF2_TcpSubscriber.hpp
-		EKF2_AI_Subscriber.cpp
-		EKF2_AI_Subscriber.hpp
-		EKF2_UdpPublisher.cpp
-		EKF2_UdpPublisher.hpp
+		# EKF2_AI_Subscriber.cpp
+		# EKF2_AI_Subscriber.hpp
+		# EKF2_UdpPublisher.cpp
+		# EKF2_UdpPublisher.hpp
 	DEPENDS
 		geo
 		hysteresis

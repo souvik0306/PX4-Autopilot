@@ -70,8 +70,8 @@
 #include <uORB/topics/sensor_accel.h>
 #include <matrix/math.hpp>
 
-// Reuse packet structure
-#include "EKF2_UdpPublisher.hpp"
+// Shared packet structure for network communication
+#include "EKF2_ImuPacket.hpp"
 
 class EKF2_TcpSubscriber
 {
@@ -175,7 +175,7 @@ private:
 	/**
 	 * Validate packet CRC
 	 */
-	bool validatePacket(const ImuUdpPacket &pkt) const;
+	bool validatePacket(const ImuNetworkPacket &pkt) const;
 
 	/**
 	 * Calculate CRC16-CCITT

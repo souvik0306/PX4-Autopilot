@@ -195,7 +195,7 @@ void EKF2_TcpPublisher::closeClient()
 	}
 }
 
-bool EKF2_TcpPublisher::sendPacket(const ImuUdpPacket &pkt)
+bool EKF2_TcpPublisher::sendPacket(const ImuNetworkPacket &pkt)
 {
 	if (_client_fd < 0) {
 		return false;
@@ -267,7 +267,7 @@ bool EKF2_TcpPublisher::publishSample(uint64_t timestamp_us,
 	_last_sample_time_us = now;
 
 	// Build packet
-	ImuUdpPacket pkt;
+	ImuNetworkPacket pkt;
 	pkt.timestamp_us = timestamp_us;
 	pkt.sequence = _sequence_counter++;
 

@@ -39,7 +39,7 @@
  * - Server-mode TCP socket listening on port 14567
  * - Accepts single AI client connection
  * - Streams IMU samples at 250Hz over persistent TCP connection
- * - Uses same ImuUdpPacket format for compatibility
+ * - Uses shared ImuNetworkPacket format for compatibility
  *
  * Features:
  * - Reliable delivery (TCP guarantees ordering and delivery)
@@ -65,8 +65,8 @@
 #include <px4_platform_common/log.h>
 #include <matrix/math.hpp>
 
-// Reuse packet structure from UDP publisher
-#include "EKF2_UdpPublisher.hpp"
+// Shared packet structure for network communication
+#include "EKF2_ImuPacket.hpp"
 
 using matrix::Vector3f;
 
@@ -139,7 +139,7 @@ private:
 	 * Send packet to connected client
 	 * @return true if sent successfully
 	 */
-	bool sendPacket(const ImuUdpPacket &pkt);
+	bool sendPacket(const ImuNetworkPacket &pkt);
 
 	/**
 	 * Close client connection

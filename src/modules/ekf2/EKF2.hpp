@@ -45,8 +45,8 @@
 #include "Utility/PreFlightChecker.hpp"
 
 #include "EKF2Selector.hpp"
-#include "EKF2_UdpPublisher.hpp"
-#include "EKF2_AI_Subscriber.hpp"
+// #include "EKF2_UdpPublisher.hpp"
+// #include "EKF2_AI_Subscriber.hpp"
 #include "EKF2_TcpPublisher.hpp"
 #include "EKF2_TcpSubscriber.hpp"
 
@@ -351,13 +351,13 @@ private:
 	uint32_t _imu_udp_msg_count{0};
 	hrt_abstime _imu_udp_last_log_time{0};
 
-	// Efficient UDP publisher for IMU samples (250Hz)
-	std::unique_ptr<EKF2_UdpPublisher> _udp_publisher{nullptr};
-	bool _udp_publisher_initialized{false};
+	// // Efficient UDP publisher for IMU samples (250Hz)
+	// std::unique_ptr<EKF2_UdpPublisher> _udp_publisher{nullptr};
+	// bool _udp_publisher_initialized{false};
 
-	// AI subscriber for receiving processed IMU data (port 14567)
-	std::unique_ptr<EKF2_AI_Subscriber> _ai_subscriber{nullptr};
-	bool _ai_subscriber_initialized{false};
+	// // AI subscriber for receiving processed IMU data (port 14567)
+	// std::unique_ptr<EKF2_AI_Subscriber> _ai_subscriber{nullptr};
+	// bool _ai_subscriber_initialized{false};
 
 	// TCP publisher for streaming IMU samples to AI client (port 14567)
 	std::unique_ptr<EKF2_TcpPublisher> _tcp_publisher{nullptr};

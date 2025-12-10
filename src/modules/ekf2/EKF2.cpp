@@ -201,11 +201,11 @@ EKF2::~EKF2()
 		_tcp_subscriber.reset();
 	}
 
-	// Cleanup AI subscriber
-	if (_ai_subscriber) {
-		_ai_subscriber->stop();
-		_ai_subscriber.reset();
-	}
+	// // Cleanup AI subscriber
+	// if (_ai_subscriber) {
+	// 	_ai_subscriber->stop();
+	// 	_ai_subscriber.reset();
+	// }
 }
 
 bool EKF2::multi_init(int imu, int mag)
