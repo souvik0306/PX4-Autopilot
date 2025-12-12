@@ -1,3 +1,7 @@
+/*WAS MEANT FOR INITIAL UDP TESTING - DELETE IF UNUSED*/
+
+
+
 /****************************************************************************
  *
  *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
@@ -53,7 +57,7 @@ bool EKF2_AI_Subscriber::init()
 		return true;
 	}
 
-	// Create UDP socket
+	// Create UDP socket for receiving AI-processed IMU data
 	_socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (_socket_fd < 0) {
 		PX4_ERR("EKF2_AI_Subscriber: Failed to create socket: %s", strerror(errno));
@@ -180,7 +184,7 @@ void* EKF2_AI_Subscriber::receiverThreadEntry(void* arg)
 
 void EKF2_AI_Subscriber::receiverLoop()
 {
-	ImuUdpPacket rx_packet;
+	ImuNetworkPacket rx_packet;
 	struct sockaddr_in sender_addr;
 	socklen_t sender_len = sizeof(sender_addr);
 
@@ -204,20 +208,18 @@ void EKF2_AI_Subscriber::receiverLoop()
 				}
 				usleep(1000); // 1ms sleep on error
 				continue;
-			}
 		}
+	}
 
-		if (bytes_received != sizeof(ImuUdpPacket)) {
-			_validation_errors++;
-			// Only log size errors occasionally
-			if (_validation_errors.load() % 100 == 1) {
-				PX4_WARN("EKF2_AI_Subscriber: Invalid packet size: %zd (expected %zu)",
-				         bytes_received, sizeof(ImuUdpPacket));
-			}
-			continue;
+	if (bytes_received != sizeof(ImuNetworkPacket)) {
+		_validation_errors++;
+		// Only log size errors occasionally
+		if (_validation_errors.load() % 100 == 1) {
+			PX4_WARN("EKF2_AI_Subscriber: Invalid packet size: %zd (expected %zu)",
+			         bytes_received, sizeof(ImuNetworkPacket));
 		}
-
-		uint64_t rx_time = hrt_absolute_time();
+		continue;
+	}		uint64_t rx_time = hrt_absolute_time();
 		_total_packets_received++;
 		_stats_interval_packet_count++;
 
@@ -269,7 +271,7 @@ void EKF2_AI_Subscriber::receiverLoop()
 	PX4_INFO("EKF2_AI_Subscriber: Receiver thread stopped");
 }
 
-bool EKF2_AI_Subscriber::validatePacket(const ImuUdpPacket &packet, float latency_us)
+bool EKF2_AI_Subscriber::validatePacket(const ImuNetworkPacket &packet, float latency_us)
 {
 	// Check latency threshold
 	if (latency_us > MAX_ACCEPTED_LATENCY_US) {
@@ -285,7 +287,7 @@ bool EKF2_AI_Subscriber::validatePacket(const ImuUdpPacket &packet, float latenc
 
 	// Validate CRC
 	uint16_t calculated_crc = calculateCrc16(reinterpret_cast<const uint8_t*>(&packet),
-	                                         sizeof(ImuUdpPacket) - sizeof(uint16_t));
+	                                         sizeof(ImuNetworkPacket) - sizeof(uint16_t));
 	if (calculated_crc != packet.crc16) {
 		_packets_dropped_crc_error++;
 		// Minimal logging - only log first few CRC errors
@@ -501,7 +503,7 @@ EKF2_AI_Subscriber::Statistics EKF2_AI_Subscriber::getStatistics() const
 {
 	Statistics stats;
 
-	// UDP reception stats
+	// Network reception stats
 	stats.total_packets_received = _total_packets_received.load();
 	stats.packets_dropped_crc_error = _packets_dropped_crc_error.load();
 	stats.packets_dropped_latency = _packets_dropped_latency.load();

@@ -1,3 +1,15 @@
+/*WAS MEANT FOR INITIAL UDP TESTING - DELETE IF UNUSED*/
+
+
+
+
+
+
+
+
+
+
+
 /****************************************************************************
  *
  *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
@@ -66,14 +78,14 @@
 #include <px4_platform_common/log.h>
 #include <matrix/math.hpp>
 
-// Include UDP packet structure from publisher
-#include "EKF2_UdpPublisher.hpp"
+// Include shared packet structure
+#include "EKF2_ImuPacket.hpp"
 
 using matrix::Vector3f;
 
 // Extended packet with reception metadata
 struct RxImuPacket {
-	ImuUdpPacket data;
+	ImuNetworkPacket data;
 	uint64_t rx_timestamp_us;   // When packet was received
 	float latency_us;           // Processing latency
 	bool valid;                 // CRC and validation status
@@ -93,7 +105,7 @@ public:
 	~EKF2_AI_Subscriber();
 
 	/**
-	 * Initialize UDP socket and start receiving thread
+	 * Initialize network socket and start receiving thread
 	 * @return true if initialization successful
 	 */
 	bool init();
@@ -119,7 +131,7 @@ public:
 	 * Comprehensive statistics structure
 	 */
 	struct Statistics {
-		// UDP reception stats
+		// Network reception stats
 		uint64_t total_packets_received;
 		uint64_t packets_dropped_crc_error;
 		uint64_t packets_dropped_latency;
@@ -154,7 +166,7 @@ public:
 
 private:
 	/**
-	 * UDP receiver thread entry point
+	 * Network receiver thread entry point
 	 */
 	static void* receiverThreadEntry(void* arg);
 
@@ -166,7 +178,7 @@ private:
 	/**
 	 * Validate received packet
 	 */
-	bool validatePacket(const ImuUdpPacket &packet, float latency_us);
+	bool validatePacket(const ImuNetworkPacket &packet, float latency_us);
 
 	/**
 	 * Calculate CRC16-CCITT for packet validation

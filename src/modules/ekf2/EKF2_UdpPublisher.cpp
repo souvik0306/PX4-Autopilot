@@ -157,7 +157,7 @@ bool EKF2_UdpPublisher::publishSample(uint64_t timestamp_us,
 	Vector3f accel = delta_vel / delta_vel_dt;
 
 	// Prepare packet
-	ImuUdpPacket pkt{};
+	ImuNetworkPacket pkt{};
 	pkt.timestamp_us = timestamp_us;
 	pkt.sequence = _sequence_counter++;
 	pkt.gyro_x = gyro_rate(0);
@@ -171,7 +171,7 @@ bool EKF2_UdpPublisher::publishSample(uint64_t timestamp_us,
 
 	// Calculate CRC for integrity (excluding CRC field itself)
 	pkt.crc16 = calculateCrc16(reinterpret_cast<const uint8_t*>(&pkt),
-	                           sizeof(ImuUdpPacket) - sizeof(uint16_t));
+	                           sizeof(ImuNetworkPacket) - sizeof(uint16_t));
 
 	// Track enqueue time for latency measurement
 	uint64_t enqueue_time = hrt_absolute_time();
@@ -218,11 +218,11 @@ bool EKF2_UdpPublisher::publishSample(uint64_t timestamp_us,
 	return sent;
 }
 
-bool EKF2_UdpPublisher::sendPacket(const ImuUdpPacket &pkt)
+bool EKF2_UdpPublisher::sendPacket(const ImuNetworkPacket &pkt)
 {
 	ssize_t bytes_sent = sendto(_socket_fd,
 	                            &pkt,
-	                            sizeof(ImuUdpPacket),
+	                            sizeof(ImuNetworkPacket),
 	                            0,
 	                            reinterpret_cast<const struct sockaddr*>(&_target_addr),
 	                            sizeof(_target_addr));
@@ -237,9 +237,9 @@ bool EKF2_UdpPublisher::sendPacket(const ImuUdpPacket &pkt)
 		   }
 	}
 
-	if (bytes_sent != sizeof(ImuUdpPacket)) {
+	if (bytes_sent != sizeof(ImuNetworkPacket)) {
 		PX4_ERR("EKF2_UdpPublisher: Partial send - Expected: %zu, Sent: %zd",
-		        sizeof(ImuUdpPacket), bytes_sent);
+		        sizeof(ImuNetworkPacket), bytes_sent);
 		return false;
 	}
 

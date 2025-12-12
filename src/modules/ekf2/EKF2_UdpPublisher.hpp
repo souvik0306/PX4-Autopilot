@@ -59,25 +59,10 @@
 #include <px4_platform_common/log.h>
 #include <matrix/math.hpp>
 
-using matrix::Vector3f;
+// Shared packet structure for network communication
+#include "EKF2_ImuPacket.hpp"
 
-// Compact binary protocol for efficient transmission
-#pragma pack(push, 1)
-struct ImuUdpPacket {
-	uint64_t timestamp_us;      // 8 bytes - sample timestamp
-	uint32_t sequence;          // 4 bytes - packet sequence number
-	float gyro_x;               // 4 bytes - instantaneous gyro rad/s
-	float gyro_y;               // 4 bytes
-	float gyro_z;               // 4 bytes
-	float accel_x;              // 4 bytes - instantaneous accel m/s²
-	float accel_y;              // 4 bytes
-	float accel_z;              // 4 bytes
-	float delta_ang_dt;         // 4 bytes - integration time for gyro
-	float delta_vel_dt;         // 4 bytes - integration time for accel
-	uint16_t crc16;             // 2 bytes - integrity check
-	// Total: 50 bytes per packet
-};
-#pragma pack(pop)
+using matrix::Vector3f;
 
 class EKF2_UdpPublisher
 {
@@ -143,7 +128,7 @@ private:
 	 * Send packet with error handling
 	 * @return true if sent successfully
 	 */
-	bool sendPacket(const ImuUdpPacket &pkt);
+	bool sendPacket(const ImuNetworkPacket &pkt);
 
 	// Socket management
 	int _socket_fd{-1};
@@ -152,7 +137,7 @@ private:
 
 	// Ring buffer for queue management
 	struct BufferSlot {
-		ImuUdpPacket packet;
+		ImuNetworkPacket packet;
 		uint64_t enqueue_time_us;
 		bool occupied;
 	};
