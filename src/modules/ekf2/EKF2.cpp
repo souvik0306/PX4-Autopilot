@@ -586,6 +586,11 @@ void EKF2::Run()
 		const hrt_abstime now = imu_sample_new.time_us;
 
 		// Default to raw IMU - ALWAYS have a valid sample for EKF
+
+		// We initialize imu_sample_for_ekf to the raw data from PX4 (in line 592),
+		// and ONLY modify it IF AI-processed data is available and used (see line 622)
+		// and when right conditions are met (EKF2_IMU_SRC = 1, TCP data received, timestamp match) we modify this raw sample with AI data from line 669 onwards.
+
 		imuSample imu_sample_for_ekf = imu_sample_new;
 
 		// Counters for AI vs raw usage (static, persistent across calls)
@@ -722,7 +727,7 @@ void EKF2::Run()
 
 			total_cycles++;
 
-			// Print statistics every 1000 cycles (approximately 4 seconds at 250Hz)
+			// Print statistics every 250 cycles (approximately 1 seconds at 250Hz)
 			if (total_cycles % 250 == 0) {
 				float ai_usage_percent = (ai_samples_used * 100.0f) / total_cycles;
 				float raw_usage_percent = (raw_fallback_used * 100.0f) / total_cycles;
