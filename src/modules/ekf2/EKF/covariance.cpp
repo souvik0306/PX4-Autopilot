@@ -220,21 +220,37 @@ void Ekf::predictCovariance()
 
 	// assign IMU noise variances
 	// inputs to the system are 3 delta angles and 3 delta velocities
-	float gyro_noise = math::constrain(_params.gyro_noise, 0.0f, 1.0f);
-	const float daxVar = sq(dt * gyro_noise);
-	const float dayVar = daxVar;
-	const float dazVar = daxVar;
+	// ---- Default EKF noise (disabled: AI values used exclusively) ----
+	// const float gyro_noise = math::constrain(_params.gyro_noise, 0.0f, 1.0f);
+	// float daxVar = sq(dt * gyro_noise);
+	// float dayVar = sq(dt * gyro_noise);
+	// float dazVar = sq(dt * gyro_noise);
 
-	float accel_noise = math::constrain(_params.accel_noise, 0.0f, 1.0f);
+	// float accel_noise = math::constrain(_params.accel_noise, 0.0f, 1.0f);
 
-	if (_fault_status.flags.bad_acc_vertical) {
-		// Increase accelerometer process noise if bad accel data is detected. Measurement errors due to
-		// vibration induced clipping commonly reach an equivalent 0.5g offset.
-		accel_noise = BADACC_BIAS_PNOISE;
-	}
+	// if (_fault_status.flags.bad_acc_vertical) {
+	// 	// Increase accelerometer process noise if bad accel data is detected. Measurement errors due to
+	// 	// vibration induced clipping commonly reach an equivalent 0.5g offset.
+	// 	accel_noise = BADACC_BIAS_PNOISE;
+	// }
 
-	float dvxVar, dvyVar, dvzVar;
-	dvxVar = dvyVar = dvzVar = sq(dt * accel_noise);
+	// float dvxVar = sq(dt * accel_noise);
+	// float dvyVar = sq(dt * accel_noise);
+	// float dvzVar = sq(dt * accel_noise);
+	// -------------------------------------------------------------------
+
+	// ---- AI noise (sole source of variance) ----
+	bool ai_gyro_override = false;
+	bool ai_acc_override  = false;
+	float daxVar = _params.ai_gyro_noise[0] > 0.f ? (_params.ai_gyro_noise[0] / 10) : 0.f;
+	float dayVar = _params.ai_gyro_noise[1] > 0.f ? (_params.ai_gyro_noise[1] / 10) : 0.f;
+	float dazVar = _params.ai_gyro_noise[2] > 0.f ? (_params.ai_gyro_noise[2] / 10) : 0.f;
+	float dvxVar = _params.ai_acc_noise[0] > 0.f  ? (_params.ai_acc_noise[0] / 100) : 0.f;
+	float dvyVar = _params.ai_acc_noise[1] > 0.f  ? (_params.ai_acc_noise[1] / 100) : 0.f;
+	float dvzVar = _params.ai_acc_noise[2] > 0.f  ? (_params.ai_acc_noise[2] / 100) : 0.f;
+	if (daxVar > 0.f || dayVar > 0.f || dazVar > 0.f) { ai_gyro_override = true; }
+	if (dvxVar > 0.f || dvyVar > 0.f || dvzVar > 0.f) { ai_acc_override  = true; }
+	// --------------------------------------------
 
 	// Accelerometer Clipping
 	// delta velocity X: increase process noise if sample contained any X axis clipping
@@ -250,6 +266,20 @@ void Ekf::predictCovariance()
 	// delta velocity Z: increase process noise if sample contained any Z axis clipping
 	if (_imu_sample_delayed.delta_vel_clipping[2]) {
 		dvzVar = sq(dt * BADACC_BIAS_PNOISE);
+	}
+
+	// Print variance values every 500 cycles (~1Hz at typical EKF rate)
+	static uint32_t print_counter = 0;
+	if (++print_counter >= 500) {
+		print_counter = 0;
+		PX4_INFO("AI_Gyro_Override: %s  AI_Acc_Override: %s",
+			ai_gyro_override ? "ACTIVE" : "inactive",
+			ai_acc_override  ? "ACTIVE" : "inactive");
+		PX4_INFO("AI_Gyro_Noise  [%.3e %.3e %.3e]", (double)_params.ai_gyro_noise[0],  (double)_params.ai_gyro_noise[1],  (double)_params.ai_gyro_noise[2]);
+		PX4_INFO("Gyro_Var  daxVar=%.3e dayVar=%.3e dazVar=%.3e", (double)daxVar, (double)dayVar, (double)dazVar);
+
+		PX4_INFO("AI_Accel_Noise [%.3e %.3e %.3e]", (double)_params.ai_acc_noise[0], (double)_params.ai_acc_noise[1], (double)_params.ai_acc_noise[2]);
+		PX4_INFO("Accel_Var dvxVar=%.3e dvyVar=%.3e dvzVar=%.3e", (double)dvxVar, (double)dvyVar, (double)dvzVar);
 	}
 
 	// predict the covariance
