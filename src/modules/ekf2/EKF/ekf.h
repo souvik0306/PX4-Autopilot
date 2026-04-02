@@ -248,6 +248,12 @@ public:
 	Vector3f getAccelBias() const { return _state.delta_vel_bias / _dt_ekf_avg; } // get the accelerometer bias in m/s**2
 	const Vector3f &getMagBias() const { return _state.mag_B; }
 
+	void getImuProcessNoiseVariance(float delta_ang_var[3], float delta_vel_var[3]) const
+	{
+		_delta_ang_var.copyTo(delta_ang_var);
+		_delta_vel_var.copyTo(delta_vel_var);
+	}
+
 	Vector3f getGyroBiasVariance() const { return Vector3f{P(10, 10), P(11, 11), P(12, 12)} / sq(_dt_ekf_avg); } // get the gyroscope bias variance in rad/s
 	Vector3f getAccelBiasVariance() const { return Vector3f{P(13, 13), P(14, 14), P(15, 15)} / sq(_dt_ekf_avg); } // get the accelerometer bias variance in m/s**2
 
@@ -541,6 +547,8 @@ private:
 	Vector3f _accel_vec_filt{};		///< acceleration vector after application of a low pass filter (m/sec**2)
 	float _accel_magnitude_filt{0.0f};	///< acceleration magnitude after application of a decaying envelope filter (rad/sec)
 	float _ang_rate_magnitude_filt{0.0f};		///< angular rate magnitude after application of a decaying envelope filter (rad/sec)
+	Vector3f _delta_ang_var{};		///< latest delta angle process noise variances [x y z] (rad**2)
+	Vector3f _delta_vel_var{};		///< latest delta velocity process noise variances [x y z] ((m/sec)**2)
 	Vector3f _prev_dvel_bias_var{};		///< saved delta velocity XYZ bias variances (m/sec)**2
 
 	// Terrain height state estimation

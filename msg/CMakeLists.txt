@@ -38,6 +38,7 @@ include(px4_list_make_absolute)
 
 set(msg_files
 	ai_imu_noise.msg
+	ekf2_imu_process_noise.msg
 	action_request.msg
 	actuator_armed.msg
 	actuator_controls.msg

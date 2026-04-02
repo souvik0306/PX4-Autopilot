@@ -147,6 +147,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("estimator_innovation_test_ratios", 500);
 	add_topic("estimator_innovation_variances", 500);
 	add_topic("estimator_innovations", 500);
+	add_topic("ekf2_imu_process_noise", 100);
 	add_topic("estimator_optical_flow_vel", 200);
 	add_topic("estimator_sensor_bias", 0);
 	add_topic("estimator_states", 1000);
@@ -161,6 +162,7 @@ void LoggedTopics::add_default_topics()
 	add_optional_topic_multi("estimator_innovation_test_ratios", 500, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_innovation_variances", 500, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_innovations", 500, MAX_ESTIMATOR_INSTANCES);
+	add_optional_topic_multi("ekf2_imu_process_noise", 100, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_optical_flow_vel", 200, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_sensor_bias", 0, MAX_ESTIMATOR_INSTANCES);
 	add_optional_topic_multi("estimator_states", 1000, MAX_ESTIMATOR_INSTANCES);
@@ -228,6 +230,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("estimator_innovation_test_ratios");
 	add_topic("estimator_innovation_variances");
 	add_topic("estimator_innovations");
+	add_topic("ekf2_imu_process_noise");
 	add_topic("estimator_optical_flow_vel");
 	add_topic("estimator_sensor_bias");
 	add_topic("estimator_states");
