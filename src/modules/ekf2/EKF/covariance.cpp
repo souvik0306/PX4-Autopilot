@@ -268,6 +268,9 @@ void Ekf::predictCovariance()
 		dvzVar = sq(dt * BADACC_BIAS_PNOISE);
 	}
 
+	_delta_ang_var = Vector3f{daxVar, dayVar, dazVar};
+	_delta_vel_var = Vector3f{dvxVar, dvyVar, dvzVar};
+
 	// Print variance values every 500 cycles (~1Hz at typical EKF rate)
 	static uint32_t print_counter = 0;
 	if (++print_counter >= 500) {
