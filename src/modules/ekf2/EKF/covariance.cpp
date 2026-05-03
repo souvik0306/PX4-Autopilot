@@ -240,16 +240,29 @@ void Ekf::predictCovariance()
 	// -------------------------------------------------------------------
 
 	// ---- AI noise (sole source of variance) ----
+	// bool ai_gyro_override = false;
+	// bool ai_acc_override  = false;
+	// float daxVar = _params.ai_gyro_noise[0] > 0.f ? (_params.ai_gyro_noise[0] / 10) : 0.f;
+	// float dayVar = _params.ai_gyro_noise[1] > 0.f ? (_params.ai_gyro_noise[1] / 10) : 0.f;
+	// float dazVar = _params.ai_gyro_noise[2] > 0.f ? (_params.ai_gyro_noise[2] / 10) : 0.f;
+	// float dvxVar = _params.ai_acc_noise[0] > 0.f  ? (_params.ai_acc_noise[0] / 100) : 0.f;
+	// float dvyVar = _params.ai_acc_noise[1] > 0.f  ? (_params.ai_acc_noise[1] / 100) : 0.f;
+	// float dvzVar = _params.ai_acc_noise[2] > 0.f  ? (_params.ai_acc_noise[2] / 100) : 0.f;
+	// if (daxVar > 0.f || dayVar > 0.f || dazVar > 0.f) { ai_gyro_override = true; }
+	// if (dvxVar > 0.f || dvyVar > 0.f || dvzVar > 0.f) { ai_acc_override  = true; }
+
 	bool ai_gyro_override = false;
 	bool ai_acc_override  = false;
-	float daxVar = _params.ai_gyro_noise[0] > 0.f ? (_params.ai_gyro_noise[0] / 10) : 0.f;
-	float dayVar = _params.ai_gyro_noise[1] > 0.f ? (_params.ai_gyro_noise[1] / 10) : 0.f;
-	float dazVar = _params.ai_gyro_noise[2] > 0.f ? (_params.ai_gyro_noise[2] / 10) : 0.f;
-	float dvxVar = _params.ai_acc_noise[0] > 0.f  ? (_params.ai_acc_noise[0] / 100) : 0.f;
-	float dvyVar = _params.ai_acc_noise[1] > 0.f  ? (_params.ai_acc_noise[1] / 100) : 0.f;
-	float dvzVar = _params.ai_acc_noise[2] > 0.f  ? (_params.ai_acc_noise[2] / 100) : 0.f;
+	float daxVar = _params.ai_gyro_noise[0] > 0.f ? sq(dt * (_params.ai_gyro_noise[0] * 10000.f)) : 0.f;
+	float dayVar = _params.ai_gyro_noise[1] > 0.f ? sq(dt * (_params.ai_gyro_noise[1] * 10000.f)) : 0.f;
+	float dazVar = _params.ai_gyro_noise[2] > 0.f ? sq(dt * (_params.ai_gyro_noise[2] * 10000.f)) : 0.f;
+	float dvxVar = _params.ai_acc_noise[0] > 0.f  ? sq(dt * (_params.ai_acc_noise[0] * 350.f)) : 0.f;
+	float dvyVar = _params.ai_acc_noise[1] > 0.f  ? sq(dt * (_params.ai_acc_noise[1] * 350.f)) : 0.f;
+	float dvzVar = _params.ai_acc_noise[2] > 0.f  ? sq(dt * (_params.ai_acc_noise[2] * 350.f)) : 0.f;
 	if (daxVar > 0.f || dayVar > 0.f || dazVar > 0.f) { ai_gyro_override = true; }
 	if (dvxVar > 0.f || dvyVar > 0.f || dvzVar > 0.f) { ai_acc_override  = true; }
+
+
 	// --------------------------------------------
 
 	// Accelerometer Clipping
@@ -275,9 +288,9 @@ void Ekf::predictCovariance()
 	static uint32_t print_counter = 0;
 	if (++print_counter >= 500) {
 		print_counter = 0;
-		PX4_INFO("AI_Gyro_Override: %s  AI_Acc_Override: %s",
+		PX4_INFO("AI_Gyro_Override: %s  AI_Acc_Override: %s  dt=%.6f",// dt = 0.008
 			ai_gyro_override ? "ACTIVE" : "inactive",
-			ai_acc_override  ? "ACTIVE" : "inactive");
+			ai_acc_override  ? "ACTIVE" : "inactive", (double)dt);
 		PX4_INFO("AI_Gyro_Noise  [%.3e %.3e %.3e]", (double)_params.ai_gyro_noise[0],  (double)_params.ai_gyro_noise[1],  (double)_params.ai_gyro_noise[2]);
 		PX4_INFO("Gyro_Var  daxVar=%.3e dayVar=%.3e dazVar=%.3e", (double)daxVar, (double)dayVar, (double)dazVar);
 
