@@ -37,6 +37,8 @@ cmake_policy(SET CMP0057 NEW)
 include(px4_list_make_absolute)
 
 set(msg_files
+	ai_imu_noise.msg
+	ekf2_imu_process_noise.msg
 	AckermannVelocitySetpoint.msg
 	ActionRequest.msg
 	ActuatorArmed.msg

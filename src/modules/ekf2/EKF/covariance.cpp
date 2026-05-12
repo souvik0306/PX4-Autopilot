@@ -46,6 +46,7 @@
 
 #include <math.h>
 #include <mathlib/mathlib.h>
+#include <drivers/drv_hrt.h>
 
 // Sets initial values for the covariance matrix
 // Do not call before quaternion states have been initialised
@@ -117,20 +118,64 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 
 	// gyro noise variance
 	float gyro_noise = _params.gyro_noise;
-	const float gyro_var = sq(gyro_noise);
+	Vector3f gyro_var;
 
 	// accel noise variance
 	float accel_noise = _params.accel_noise;
 	Vector3f accel_var;
 
+	bool ai_gyro_override = false;
+	bool ai_acc_override = false;
+
 	for (unsigned i = 0; i < 3; i++) {
+		if (_params.ai_gyro_noise[i] > 0.f) {
+			gyro_var(i) = sq(_params.ai_gyro_noise[i] * 10000.f);
+			ai_gyro_override = true;
+
+		} else {
+			gyro_var(i) = sq(gyro_noise);
+		}
+
 		if (_fault_status.flags.bad_acc_vertical || imu_delayed.delta_vel_clipping[i]) {
-			// Increase accelerometer process noise if bad accel data is detected
 			accel_var(i) = sq(BADACC_BIAS_PNOISE);
+
+		} else if (_params.ai_acc_noise[i] > 0.f) {
+			accel_var(i) = sq(_params.ai_acc_noise[i] * 350.f);
+			ai_acc_override = true;
 
 		} else {
 			accel_var(i) = sq(accel_noise);
 		}
+	}
+
+	static hrt_abstime last_noise_print = 0;
+	const hrt_abstime now = hrt_absolute_time();
+
+	if ((now - last_noise_print) >= 5ULL * 1000ULL * 1000ULL) {
+		PX4_INFO("AI_Gyro_Override: %s,  AI_Acc_Override: %s,  dt=%.6f",// dt = 0.008
+			ai_gyro_override ? "ACTIVE" : "inactive",
+			ai_acc_override  ? "ACTIVE" : "inactive", (double)dt);
+		PX4_INFO("AI_gyro_noise=[%.3e %.3e %.3e]",
+			(double)_params.ai_gyro_noise[0],
+			(double)_params.ai_gyro_noise[1],
+			(double)_params.ai_gyro_noise[2]);
+
+		PX4_INFO("EKF_gyro_var=[%.3e %.3e %.3e]",
+			(double)gyro_var(0),
+			(double)gyro_var(1),
+			(double)gyro_var(2));
+
+		PX4_INFO("AI_accel_noise=[%.3e %.3e %.3e]",
+			(double)_params.ai_acc_noise[0],
+			(double)_params.ai_acc_noise[1],
+			(double)_params.ai_acc_noise[2]);
+
+		PX4_INFO("EKF_accel_var=[%.3e %.3e %.3e]",
+			(double)accel_var(0),
+			(double)accel_var(1),
+			(double)accel_var(2));
+
+		last_noise_print = now;
 	}
 
 	// calculate variances and upper diagonal covariances for quaternion, velocity, position and gyro bias states
@@ -150,7 +195,7 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 		for (unsigned index = 0; index < State::gyro_bias.dof; index++) {
 			const unsigned i = State::gyro_bias.idx + index;
 
-			if (P(i, i) < gyro_var) {
+			if (P(i, i) < gyro_var(index)) {
 				P(i, i) += gyro_bias_process_noise;
 			}
 		}

@@ -118,7 +118,7 @@ def predict_covariance(
     accel: sf.V3,
     accel_var: sf.V3,
     gyro: sf.V3,
-    gyro_var: sf.Scalar,
+    gyro_var: sf.V3,
     dt: sf.Scalar
 ) -> MTangent:
 
@@ -205,7 +205,7 @@ def predict_covariance(
     G = VTangent(state_error_pred.to_storage()).jacobian(noise).subs(zero_state_error).subs(zero_noise)
 
     # Covariance propagation
-    var_u = sf.Matrix.diag([accel_var[0], accel_var[1], accel_var[2], gyro_var, gyro_var, gyro_var])
+    var_u = sf.Matrix.diag([accel_var[0], accel_var[1], accel_var[2], gyro_var[0], gyro_var[1], gyro_var[2]])
     P_new = A * P * A.T + G * var_u * G.T
 
     # Generate the equations for the upper triangular matrix and the diagonal only

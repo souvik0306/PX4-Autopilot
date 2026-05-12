@@ -69,6 +69,12 @@
 #define MAVLINK_RECEIVER_NET_ADDED_STACK 0
 #endif
 
+// Custom AI IMU noise message — raw ID used until a proper MAVLink dialect XML is added.
+// Using 50001 (in MAVLink user-defined range 50000-60000) to avoid conflicts.
+#ifndef MAVLINK_MSG_ID_AI_IMU_NOISE
+#define MAVLINK_MSG_ID_AI_IMU_NOISE 50001
+#endif
+
 MavlinkReceiver::~MavlinkReceiver()
 {
 	delete _tune_publisher;
@@ -136,6 +142,10 @@ void
 MavlinkReceiver::handle_message(mavlink_message_t *msg)
 {
 	switch (msg->msgid) {
+	case MAVLINK_MSG_ID_AI_IMU_NOISE:
+		handle_message_ai_imu_noise(msg);
+		break;
+
 	case MAVLINK_MSG_ID_COMMAND_LONG:
 		handle_message_command_long(msg);
 		break;
@@ -2297,6 +2307,42 @@ MavlinkReceiver::get_message_interval(int msgId)
 	// send back this value...
 	mavlink_msg_message_interval_send(_mavlink.get_channel(), msgId, interval);
 }
+
+void
+MavlinkReceiver::handle_message_ai_imu_noise(mavlink_message_t *msg)
+{
+
+	// Manual payload decode: float32 accel_x/y/z, gyro_x/y/z (24 bytes)
+	if (msg->len < 24) {
+		return;
+	}
+
+	float payload[6];
+	_MAV_RETURN_float_array(msg, payload, 6, 0);
+
+	ai_imu_noise_s noise{};
+	noise.timestamp       = hrt_absolute_time();
+	noise.ai_acc_noise[0]  = payload[0];
+	noise.ai_acc_noise[1]  = payload[1];
+	noise.ai_acc_noise[2]  = payload[2];
+	noise.ai_gyro_noise[0] = payload[3];
+	noise.ai_gyro_noise[1] = payload[4];
+	noise.ai_gyro_noise[2] = payload[5];
+
+	// Print received values throttled to ~1 Hz
+	static hrt_abstime last_print_us = 0;
+	hrt_abstime now_us = hrt_absolute_time();
+
+	if (now_us - last_print_us >= 1_s) {
+		last_print_us = now_us;
+		PX4_INFO("[MAVLINK_RX_AI_IMU] ai_acc=[%.4f %.4f %.4f] ai_gyro=[%.4f %.4f %.4f]",
+			 (double)noise.ai_acc_noise[0], (double)noise.ai_acc_noise[1], (double)noise.ai_acc_noise[2],
+			 (double)noise.ai_gyro_noise[0], (double)noise.ai_gyro_noise[1], (double)noise.ai_gyro_noise[2]);
+	}
+
+	_ai_imu_noise_pub.publish(noise);
+}
+
 
 void
 MavlinkReceiver::handle_message_hil_sensor(mavlink_message_t *msg)

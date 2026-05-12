@@ -725,6 +725,22 @@ void EKF2::Run()
 		}
 	}
 
+	// poll and print AI IMU noise values whenever a new message arrives
+	if (_ai_imu_noise_sub.updated()) {
+		ai_imu_noise_s noise;
+
+		if (_ai_imu_noise_sub.copy(&noise)) {
+			// Write AI-predicted per-axis noise into the EKF params struct so
+			// covariance.cpp can read them via _params.ai_accel_noise / ai_gyro_noise
+			_params->ai_acc_noise[0] = noise.ai_acc_noise[0];
+			_params->ai_acc_noise[1] = noise.ai_acc_noise[1];
+			_params->ai_acc_noise[2] = noise.ai_acc_noise[2];
+			_params->ai_gyro_noise[0]  = noise.ai_gyro_noise[0];
+			_params->ai_gyro_noise[1]  = noise.ai_gyro_noise[1];
+			_params->ai_gyro_noise[2]  = noise.ai_gyro_noise[2];
+		}
+	}
+
 	if (imu_updated) {
 		const hrt_abstime now = imu_sample_new.time_us;
 

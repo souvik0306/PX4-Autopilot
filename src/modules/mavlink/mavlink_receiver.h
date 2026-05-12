@@ -60,6 +60,7 @@
 #include <uORB/Publication.hpp>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/SubscriptionInterval.hpp>
+#include <uORB/topics/ai_imu_noise.h>
 #include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/airspeed.h>
@@ -157,6 +158,7 @@ private:
 	void handle_message(mavlink_message_t *msg);
 	void handle_messages_in_gimbal_mode(mavlink_message_t &msg);
 
+	void handle_message_ai_imu_noise(mavlink_message_t *msg);
 	void handle_message_adsb_vehicle(mavlink_message_t *msg);
 	void handle_message_att_pos_mocap(mavlink_message_t *msg);
 	void handle_message_battery_status(mavlink_message_t *msg);
@@ -293,6 +295,7 @@ private:
 	uint16_t _mavlink_status_last_packet_rx_drop_count{0};
 
 	// ORB publications
+	uORB::Publication<ai_imu_noise_s>		_ai_imu_noise_pub{ORB_ID(ai_imu_noise)};
 	uORB::Publication<airspeed_s>				_airspeed_pub{ORB_ID(airspeed)};
 	uORB::Publication<battery_status_s>			_battery_pub{ORB_ID(battery_status)};
 	uORB::Publication<camera_status_s>			_camera_status_pub{ORB_ID(camera_status)};
