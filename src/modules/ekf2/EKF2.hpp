@@ -65,6 +65,7 @@
 #include <uORB/SubscriptionCallback.hpp>
 #include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/ekf2_timestamps.h>
+#include <uORB/topics/ekf2_imu_process_noise.h>
 #include <uORB/topics/estimator_bias.h>
 #include <uORB/topics/estimator_bias3d.h>
 #include <uORB/topics/estimator_event_flags.h>
@@ -189,6 +190,7 @@ private:
 	void PublishInnovations(const hrt_abstime &timestamp);
 	void PublishInnovationTestRatios(const hrt_abstime &timestamp);
 	void PublishInnovationVariances(const hrt_abstime &timestamp);
+	void PublishImuProcessNoise(const hrt_abstime &timestamp);
 	void PublishLocalPosition(const hrt_abstime &timestamp);
 	void PublishOdometry(const hrt_abstime &timestamp, const imuSample &imu_sample);
 	void PublishSensorBias(const hrt_abstime &timestamp);
@@ -422,6 +424,7 @@ private:
 	uint32_t _filter_information_event_changes{0};
 
 	uORB::PublicationMulti<ekf2_timestamps_s>            _ekf2_timestamps_pub{ORB_ID(ekf2_timestamps)};
+	uORB::PublicationMulti<ekf2_imu_process_noise_s>     _ekf2_imu_process_noise_pub{ORB_ID(ekf2_imu_process_noise)};
 	uORB::PublicationMultiData<estimator_event_flags_s>  _estimator_event_flags_pub{ORB_ID(estimator_event_flags)};
 	uORB::PublicationMulti<estimator_innovations_s>      _estimator_innovation_test_ratios_pub{ORB_ID(estimator_innovation_test_ratios)};
 	uORB::PublicationMulti<estimator_innovations_s>      _estimator_innovation_variances_pub{ORB_ID(estimator_innovation_variances)};

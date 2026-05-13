@@ -268,6 +268,13 @@ public:
 	float getGyroBiasLimit() const { return _params.gyro_bias_lim; }
 	float getGyroNoise() const { return _params.gyro_noise; }
 
+	void getImuProcessNoiseVariance(float gyro_var_uorb[3], float accel_var_uorb[3]) const
+	{
+		_gyro_var_uorb.copyTo(gyro_var_uorb);
+		_accel_var_uorb.copyTo(accel_var_uorb);
+	}
+
+
 	// accel bias
 	const Vector3f &getAccelBias() const { return _state.accel_bias; } // get the accelerometer bias in m/s**2
 	Vector3f getAccelBiasVariance() const { return getStateVariance<State::accel_bias>(); } // get the accelerometer bias variance in m/s**2
@@ -624,6 +631,8 @@ private:
 	bool _gyro_bias_inhibit[3] {};		///< true when the gyro bias learning is being inhibited for the specified axis
 	float _accel_magnitude_filt{0.0f};	///< acceleration magnitude after application of a decaying envelope filter (rad/sec)
 	float _ang_rate_magnitude_filt{0.0f};		///< angular rate magnitude after application of a decaying envelope filter (rad/sec)
+	Vector3f _gyro_var_uorb{};		///< latest gyro noise variances used for logging (rad/s)**2)
+	Vector3f _accel_var_uorb{};		///< latest accel noise variances used for logging ((m/sec)**2)**2
 
 	// imu fault status
 	uint64_t _time_bad_vert_accel{0};	///< last time a bad vertical accel was detected (uSec)

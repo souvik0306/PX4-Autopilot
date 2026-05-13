@@ -46,7 +46,6 @@
 
 #include <math.h>
 #include <mathlib/mathlib.h>
-#include <drivers/drv_hrt.h>
 
 // Sets initial values for the covariance matrix
 // Do not call before quaternion states have been initialised
@@ -148,10 +147,13 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 		}
 	}
 
-	static hrt_abstime last_noise_print = 0;
-	const hrt_abstime now = hrt_absolute_time();
+	// Logging final noise variance values used by EKF2 under uORB topic ekf2_imu_process_noise
+	_gyro_var_uorb = Vector3f{gyro_var(0), gyro_var(1), gyro_var(2)};
+	_accel_var_uorb = Vector3f{accel_var(0), accel_var(1), accel_var(2)};
 
-	if ((now - last_noise_print) >= 5ULL * 1000ULL * 1000ULL) {
+	static uint32_t print_counter = 0;
+	if (++print_counter >= 500) {
+		print_counter = 0;
 		PX4_INFO("AI_Gyro_Override: %s,  AI_Acc_Override: %s,  dt=%.6f",// dt = 0.008
 			ai_gyro_override ? "ACTIVE" : "inactive",
 			ai_acc_override  ? "ACTIVE" : "inactive", (double)dt);
@@ -174,8 +176,6 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 			(double)accel_var(0),
 			(double)accel_var(1),
 			(double)accel_var(2));
-
-		last_noise_print = now;
 	}
 
 	// calculate variances and upper diagonal covariances for quaternion, velocity, position and gyro bias states

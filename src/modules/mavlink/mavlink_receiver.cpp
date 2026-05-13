@@ -2335,9 +2335,9 @@ MavlinkReceiver::handle_message_ai_imu_noise(mavlink_message_t *msg)
 
 	if (now_us - last_print_us >= 1_s) {
 		last_print_us = now_us;
-		PX4_INFO("[MAVLINK_RX_AI_IMU] ai_acc=[%.4f %.4f %.4f] ai_gyro=[%.4f %.4f %.4f]",
-			 (double)noise.ai_acc_noise[0], (double)noise.ai_acc_noise[1], (double)noise.ai_acc_noise[2],
-			 (double)noise.ai_gyro_noise[0], (double)noise.ai_gyro_noise[1], (double)noise.ai_gyro_noise[2]);
+	// 	PX4_INFO("[MAVLINK_RX_AI_IMU] ai_acc=[%.3e %.3e %.3e] ai_gyro=[%.3e %.3e %.3e]",
+	// 		 (double)noise.ai_acc_noise[0], (double)noise.ai_acc_noise[1], (double)noise.ai_acc_noise[2],
+	// 		 (double)noise.ai_gyro_noise[0], (double)noise.ai_gyro_noise[1], (double)noise.ai_gyro_noise[2]);
 	}
 
 	_ai_imu_noise_pub.publish(noise);

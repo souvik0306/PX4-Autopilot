@@ -38,50 +38,50 @@ void ComputeMagZInnovVarAndH(const matrix::Matrix<Scalar, 25, 1>& state,
   // Input arrays
 
   // Intermediate terms (15)
-  const Scalar _tmp0 = 2 * state(16, 0);
-  const Scalar _tmp1 = 2 * state(17, 0);
-  const Scalar _tmp2 =
-      (Scalar(1) / Scalar(2)) * _tmp0 * state(2, 0) - Scalar(1) / Scalar(2) * _tmp1 * state(1, 0);
-  const Scalar _tmp3 = 2 * state(1, 0);
-  const Scalar _tmp4 = (Scalar(1) / Scalar(2)) * _tmp1 * state(2, 0) +
-                       (Scalar(1) / Scalar(2)) * _tmp3 * state(16, 0);
-  const Scalar _tmp5 = 4 * state(18, 0);
-  const Scalar _tmp6 = (Scalar(1) / Scalar(2)) * _tmp0 * state(0, 0) +
+  const Scalar _tmp0 = 2 * state(17, 0);
+  const Scalar _tmp1 = 2 * state(16, 0);
+  const Scalar _tmp2 = 4 * state(18, 0);
+  const Scalar _tmp3 = -Scalar(1) / Scalar(2) * _tmp0 * state(0, 0) +
                        (Scalar(1) / Scalar(2)) * _tmp1 * state(3, 0) -
-                       Scalar(1) / Scalar(2) * _tmp5 * state(2, 0);
-  const Scalar _tmp7 = (Scalar(1) / Scalar(2)) * _tmp0 * state(3, 0) -
-                       Scalar(1) / Scalar(2) * _tmp1 * state(0, 0) -
-                       Scalar(1) / Scalar(2) * _tmp5 * state(1, 0);
+                       Scalar(1) / Scalar(2) * _tmp2 * state(1, 0);
+  const Scalar _tmp4 = (Scalar(1) / Scalar(2)) * _tmp0 * state(3, 0) +
+                       (Scalar(1) / Scalar(2)) * _tmp1 * state(0, 0) -
+                       Scalar(1) / Scalar(2) * _tmp2 * state(2, 0);
+  const Scalar _tmp5 =
+      -Scalar(1) / Scalar(2) * _tmp0 * state(1, 0) + (Scalar(1) / Scalar(2)) * _tmp1 * state(2, 0);
+  const Scalar _tmp6 =
+      (Scalar(1) / Scalar(2)) * _tmp0 * state(2, 0) + (Scalar(1) / Scalar(2)) * _tmp1 * state(1, 0);
+  const Scalar _tmp7 =
+      _tmp3 * state(3, 0) + _tmp4 * state(0, 0) - _tmp5 * state(2, 0) - _tmp6 * state(1, 0);
   const Scalar _tmp8 =
-      -_tmp2 * state(3, 0) + _tmp4 * state(0, 0) + _tmp6 * state(1, 0) - _tmp7 * state(2, 0);
+      _tmp3 * state(0, 0) - _tmp4 * state(3, 0) - _tmp5 * state(1, 0) + _tmp6 * state(2, 0);
   const Scalar _tmp9 =
-      -_tmp2 * state(1, 0) + _tmp4 * state(2, 0) - _tmp6 * state(3, 0) + _tmp7 * state(0, 0);
-  const Scalar _tmp10 =
-      -_tmp2 * state(2, 0) - _tmp4 * state(1, 0) + _tmp6 * state(0, 0) + _tmp7 * state(3, 0);
-  const Scalar _tmp11 =
+      -_tmp3 * state(2, 0) + _tmp4 * state(1, 0) - _tmp5 * state(3, 0) + _tmp6 * state(0, 0);
+  const Scalar _tmp10 = 2 * state(3, 0);
+  const Scalar _tmp11 = 2 * state(0, 0);
+  const Scalar _tmp12 = _tmp10 * state(2, 0) - _tmp11 * state(1, 0);
+  const Scalar _tmp13 =
       -2 * std::pow(state(1, 0), Scalar(2)) - 2 * std::pow(state(2, 0), Scalar(2)) + 1;
-  const Scalar _tmp12 = 2 * state(2, 0);
-  const Scalar _tmp13 = _tmp12 * state(3, 0) - _tmp3 * state(0, 0);
-  const Scalar _tmp14 = _tmp12 * state(0, 0) + _tmp3 * state(3, 0);
+  const Scalar _tmp14 = _tmp10 * state(1, 0) + _tmp11 * state(2, 0);
 
   // Output terms (2)
   if (innov_var != nullptr) {
     Scalar& _innov_var = (*innov_var);
 
-    _innov_var = P(0, 20) * _tmp9 + P(1, 20) * _tmp10 + P(15, 20) * _tmp14 + P(16, 20) * _tmp13 +
-                 P(17, 20) * _tmp11 + P(2, 20) * _tmp8 + P(20, 20) + R +
-                 _tmp10 * (P(0, 1) * _tmp9 + P(1, 1) * _tmp10 + P(15, 1) * _tmp14 +
-                           P(16, 1) * _tmp13 + P(17, 1) * _tmp11 + P(2, 1) * _tmp8 + P(20, 1)) +
-                 _tmp11 * (P(0, 17) * _tmp9 + P(1, 17) * _tmp10 + P(15, 17) * _tmp14 +
-                           P(16, 17) * _tmp13 + P(17, 17) * _tmp11 + P(2, 17) * _tmp8 + P(20, 17)) +
-                 _tmp13 * (P(0, 16) * _tmp9 + P(1, 16) * _tmp10 + P(15, 16) * _tmp14 +
-                           P(16, 16) * _tmp13 + P(17, 16) * _tmp11 + P(2, 16) * _tmp8 + P(20, 16)) +
-                 _tmp14 * (P(0, 15) * _tmp9 + P(1, 15) * _tmp10 + P(15, 15) * _tmp14 +
-                           P(16, 15) * _tmp13 + P(17, 15) * _tmp11 + P(2, 15) * _tmp8 + P(20, 15)) +
-                 _tmp8 * (P(0, 2) * _tmp9 + P(1, 2) * _tmp10 + P(15, 2) * _tmp14 +
-                          P(16, 2) * _tmp13 + P(17, 2) * _tmp11 + P(2, 2) * _tmp8 + P(20, 2)) +
-                 _tmp9 * (P(0, 0) * _tmp9 + P(1, 0) * _tmp10 + P(15, 0) * _tmp14 +
-                          P(16, 0) * _tmp13 + P(17, 0) * _tmp11 + P(2, 0) * _tmp8 + P(20, 0));
+    _innov_var = P(0, 20) * _tmp8 + P(1, 20) * _tmp7 + P(15, 20) * _tmp14 + P(16, 20) * _tmp12 +
+                 P(17, 20) * _tmp13 + P(2, 20) * _tmp9 + P(20, 20) + R +
+                 _tmp12 * (P(0, 16) * _tmp8 + P(1, 16) * _tmp7 + P(15, 16) * _tmp14 +
+                           P(16, 16) * _tmp12 + P(17, 16) * _tmp13 + P(2, 16) * _tmp9 + P(20, 16)) +
+                 _tmp13 * (P(0, 17) * _tmp8 + P(1, 17) * _tmp7 + P(15, 17) * _tmp14 +
+                           P(16, 17) * _tmp12 + P(17, 17) * _tmp13 + P(2, 17) * _tmp9 + P(20, 17)) +
+                 _tmp14 * (P(0, 15) * _tmp8 + P(1, 15) * _tmp7 + P(15, 15) * _tmp14 +
+                           P(16, 15) * _tmp12 + P(17, 15) * _tmp13 + P(2, 15) * _tmp9 + P(20, 15)) +
+                 _tmp7 * (P(0, 1) * _tmp8 + P(1, 1) * _tmp7 + P(15, 1) * _tmp14 +
+                          P(16, 1) * _tmp12 + P(17, 1) * _tmp13 + P(2, 1) * _tmp9 + P(20, 1)) +
+                 _tmp8 * (P(0, 0) * _tmp8 + P(1, 0) * _tmp7 + P(15, 0) * _tmp14 +
+                          P(16, 0) * _tmp12 + P(17, 0) * _tmp13 + P(2, 0) * _tmp9 + P(20, 0)) +
+                 _tmp9 * (P(0, 2) * _tmp8 + P(1, 2) * _tmp7 + P(15, 2) * _tmp14 +
+                          P(16, 2) * _tmp12 + P(17, 2) * _tmp13 + P(2, 2) * _tmp9 + P(20, 2));
   }
 
   if (H != nullptr) {
@@ -89,12 +89,12 @@ void ComputeMagZInnovVarAndH(const matrix::Matrix<Scalar, 25, 1>& state,
 
     _h.setZero();
 
-    _h(0, 0) = _tmp9;
-    _h(1, 0) = _tmp10;
-    _h(2, 0) = _tmp8;
+    _h(0, 0) = _tmp8;
+    _h(1, 0) = _tmp7;
+    _h(2, 0) = _tmp9;
     _h(15, 0) = _tmp14;
-    _h(16, 0) = _tmp13;
-    _h(17, 0) = _tmp11;
+    _h(16, 0) = _tmp12;
+    _h(17, 0) = _tmp13;
     _h(20, 0) = 1;
   }
 }  // NOLINT(readability/fn_size)
