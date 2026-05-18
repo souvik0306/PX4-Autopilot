@@ -34,28 +34,28 @@ void ComputeGravityXyzInnovVarAndHx(const matrix::Matrix<Scalar, 25, 1>& state,
   // Input arrays
 
   // Intermediate terms (13)
-  const Scalar _tmp0 = 2 * state(0, 0);
-  const Scalar _tmp1 = -_tmp0 * state(3, 0);
-  const Scalar _tmp2 = 2 * state(2, 0);
-  const Scalar _tmp3 = _tmp2 * state(1, 0);
-  const Scalar _tmp4 = _tmp1 - _tmp3;
-  const Scalar _tmp5 = std::pow(state(3, 0), Scalar(2));
-  const Scalar _tmp6 = std::pow(state(0, 0), Scalar(2));
-  const Scalar _tmp7 = std::pow(state(1, 0), Scalar(2)) - std::pow(state(2, 0), Scalar(2));
-  const Scalar _tmp8 = -_tmp5 + _tmp6 + _tmp7;
-  const Scalar _tmp9 = _tmp1 + _tmp3;
-  const Scalar _tmp10 = _tmp5 - _tmp6 + _tmp7;
-  const Scalar _tmp11 = _tmp0 * state(1, 0) - _tmp2 * state(3, 0);
-  const Scalar _tmp12 = _tmp2 * state(0, 0) + 2 * state(1, 0) * state(3, 0);
+  const Scalar _tmp0 = std::pow(state(3, 0), Scalar(2));
+  const Scalar _tmp1 = std::pow(state(0, 0), Scalar(2));
+  const Scalar _tmp2 = std::pow(state(1, 0), Scalar(2)) - std::pow(state(2, 0), Scalar(2));
+  const Scalar _tmp3 = -_tmp0 + _tmp1 + _tmp2;
+  const Scalar _tmp4 = 2 * state(1, 0);
+  const Scalar _tmp5 = _tmp4 * state(2, 0);
+  const Scalar _tmp6 = 2 * state(0, 0);
+  const Scalar _tmp7 = -_tmp6 * state(3, 0);
+  const Scalar _tmp8 = -_tmp5 + _tmp7;
+  const Scalar _tmp9 = _tmp0 - _tmp1 + _tmp2;
+  const Scalar _tmp10 = _tmp5 + _tmp7;
+  const Scalar _tmp11 = _tmp6 * state(1, 0) - 2 * state(2, 0) * state(3, 0);
+  const Scalar _tmp12 = _tmp4 * state(3, 0) + _tmp6 * state(2, 0);
 
   // Output terms (2)
   if (innov_var != nullptr) {
     matrix::Matrix<Scalar, 3, 1>& _innov_var = (*innov_var);
 
-    _innov_var(0, 0) = R + _tmp4 * (P(0, 0) * _tmp4 + P(1, 0) * _tmp8) +
-                       _tmp8 * (P(0, 1) * _tmp4 + P(1, 1) * _tmp8);
-    _innov_var(1, 0) = R + _tmp10 * (P(0, 0) * _tmp10 + P(1, 0) * _tmp9) +
-                       _tmp9 * (P(0, 1) * _tmp10 + P(1, 1) * _tmp9);
+    _innov_var(0, 0) = R + _tmp3 * (P(0, 1) * _tmp8 + P(1, 1) * _tmp3) +
+                       _tmp8 * (P(0, 0) * _tmp8 + P(1, 0) * _tmp3);
+    _innov_var(1, 0) = R + _tmp10 * (P(0, 1) * _tmp9 + P(1, 1) * _tmp10) +
+                       _tmp9 * (P(0, 0) * _tmp9 + P(1, 0) * _tmp10);
     _innov_var(2, 0) = R + _tmp11 * (P(0, 0) * _tmp11 + P(1, 0) * _tmp12) +
                        _tmp12 * (P(0, 1) * _tmp11 + P(1, 1) * _tmp12);
   }
@@ -65,8 +65,8 @@ void ComputeGravityXyzInnovVarAndHx(const matrix::Matrix<Scalar, 25, 1>& state,
 
     _hx.setZero();
 
-    _hx(0, 0) = _tmp4;
-    _hx(1, 0) = _tmp8;
+    _hx(0, 0) = _tmp8;
+    _hx(1, 0) = _tmp3;
   }
 }  // NOLINT(readability/fn_size)
 

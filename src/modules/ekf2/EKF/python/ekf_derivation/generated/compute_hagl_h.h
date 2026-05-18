@@ -15,8 +15,6 @@ namespace sym {
  *
  * Symbolic function: compute_hagl_h
  *
- * Args:
- *
  * Outputs:
  *     H: Matrix24_1
  */
