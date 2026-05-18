@@ -42,9 +42,9 @@ void ComputeAirspeedInnovAndInnovVar(const matrix::Matrix<Scalar, 25, 1>& state,
   const Scalar _tmp2 = std::sqrt(Scalar(std::pow(_tmp0, Scalar(2)) + std::pow(_tmp1, Scalar(2)) +
                                         epsilon + std::pow(state(6, 0), Scalar(2))));
   const Scalar _tmp3 = Scalar(1.0) / (_tmp2);
-  const Scalar _tmp4 = _tmp0 * _tmp3;
+  const Scalar _tmp4 = _tmp3 * state(6, 0);
   const Scalar _tmp5 = _tmp1 * _tmp3;
-  const Scalar _tmp6 = _tmp3 * state(6, 0);
+  const Scalar _tmp6 = _tmp0 * _tmp3;
 
   // Output terms (2)
   if (innov != nullptr) {
@@ -56,17 +56,17 @@ void ComputeAirspeedInnovAndInnovVar(const matrix::Matrix<Scalar, 25, 1>& state,
   if (innov_var != nullptr) {
     Scalar& _innov_var = (*innov_var);
 
-    _innov_var = R -
-                 _tmp4 * (-P(21, 22) * _tmp5 - P(22, 22) * _tmp4 + P(3, 22) * _tmp5 +
-                          P(4, 22) * _tmp4 + P(5, 22) * _tmp6) +
-                 _tmp4 * (-P(21, 4) * _tmp5 - P(22, 4) * _tmp4 + P(3, 4) * _tmp5 + P(4, 4) * _tmp4 +
-                          P(5, 4) * _tmp6) -
-                 _tmp5 * (-P(21, 21) * _tmp5 - P(22, 21) * _tmp4 + P(3, 21) * _tmp5 +
-                          P(4, 21) * _tmp4 + P(5, 21) * _tmp6) +
-                 _tmp5 * (-P(21, 3) * _tmp5 - P(22, 3) * _tmp4 + P(3, 3) * _tmp5 + P(4, 3) * _tmp4 +
-                          P(5, 3) * _tmp6) +
-                 _tmp6 * (-P(21, 5) * _tmp5 - P(22, 5) * _tmp4 + P(3, 5) * _tmp5 + P(4, 5) * _tmp4 +
-                          P(5, 5) * _tmp6);
+    _innov_var = R +
+                 _tmp4 * (-P(21, 5) * _tmp5 - P(22, 5) * _tmp6 + P(3, 5) * _tmp5 + P(4, 5) * _tmp6 +
+                          P(5, 5) * _tmp4) -
+                 _tmp5 * (-P(21, 21) * _tmp5 - P(22, 21) * _tmp6 + P(3, 21) * _tmp5 +
+                          P(4, 21) * _tmp6 + P(5, 21) * _tmp4) +
+                 _tmp5 * (-P(21, 3) * _tmp5 - P(22, 3) * _tmp6 + P(3, 3) * _tmp5 + P(4, 3) * _tmp6 +
+                          P(5, 3) * _tmp4) -
+                 _tmp6 * (-P(21, 22) * _tmp5 - P(22, 22) * _tmp6 + P(3, 22) * _tmp5 +
+                          P(4, 22) * _tmp6 + P(5, 22) * _tmp4) +
+                 _tmp6 * (-P(21, 4) * _tmp5 - P(22, 4) * _tmp6 + P(3, 4) * _tmp5 + P(4, 4) * _tmp6 +
+                          P(5, 4) * _tmp4);
   }
 }  // NOLINT(readability/fn_size)
 

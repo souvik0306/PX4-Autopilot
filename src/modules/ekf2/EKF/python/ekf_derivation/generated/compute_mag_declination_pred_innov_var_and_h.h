@@ -41,8 +41,8 @@ void ComputeMagDeclinationPredInnovVarAndH(const matrix::Matrix<Scalar, 25, 1>& 
       epsilon * ((((state(16, 0)) > 0) - ((state(16, 0)) < 0)) + Scalar(0.5)) + state(16, 0);
   const Scalar _tmp1 =
       Scalar(1.0) / (std::pow(_tmp0, Scalar(2)) + std::pow(state(17, 0), Scalar(2)));
-  const Scalar _tmp2 = _tmp0 * _tmp1;
-  const Scalar _tmp3 = _tmp1 * state(17, 0);
+  const Scalar _tmp2 = _tmp1 * state(17, 0);
+  const Scalar _tmp3 = _tmp0 * _tmp1;
 
   // Output terms (3)
   if (pred != nullptr) {
@@ -54,8 +54,8 @@ void ComputeMagDeclinationPredInnovVarAndH(const matrix::Matrix<Scalar, 25, 1>& 
   if (innov_var != nullptr) {
     Scalar& _innov_var = (*innov_var);
 
-    _innov_var = R + _tmp2 * (-P(15, 16) * _tmp3 + P(16, 16) * _tmp2) -
-                 _tmp3 * (-P(15, 15) * _tmp3 + P(16, 15) * _tmp2);
+    _innov_var = R - _tmp2 * (-P(15, 15) * _tmp2 + P(16, 15) * _tmp3) +
+                 _tmp3 * (-P(15, 16) * _tmp2 + P(16, 16) * _tmp3);
   }
 
   if (H != nullptr) {
@@ -63,8 +63,8 @@ void ComputeMagDeclinationPredInnovVarAndH(const matrix::Matrix<Scalar, 25, 1>& 
 
     _h.setZero();
 
-    _h(15, 0) = -_tmp3;
-    _h(16, 0) = _tmp2;
+    _h(15, 0) = -_tmp2;
+    _h(16, 0) = _tmp3;
   }
 }  // NOLINT(readability/fn_size)
 

@@ -25,53 +25,52 @@ namespace sym {
 template <typename Scalar>
 matrix::Matrix<Scalar, 24, 1> ComputeSideslipH(const matrix::Matrix<Scalar, 25, 1>& state,
                                               const Scalar epsilon) {
-  // Total ops: 130
+  // Total ops: 131
 
   // Input arrays
 
-  // Intermediate terms (38)
-  const Scalar _tmp0 = -state(23, 0) + state(5, 0);
-  const Scalar _tmp1 = 2 * state(3, 0);
+  // Intermediate terms (37)
+  const Scalar _tmp0 = -state(22, 0) + state(4, 0);
+  const Scalar _tmp1 = 2 * state(1, 0);
   const Scalar _tmp2 = 2 * state(6, 0);
-  const Scalar _tmp3 = _tmp2 * state(2, 0);
+  const Scalar _tmp3 = _tmp2 * state(3, 0);
   const Scalar _tmp4 = 1 - 2 * std::pow(state(3, 0), Scalar(2));
   const Scalar _tmp5 = _tmp4 - 2 * std::pow(state(2, 0), Scalar(2));
-  const Scalar _tmp6 = -state(22, 0) + state(4, 0);
-  const Scalar _tmp7 = 2 * state(1, 0);
-  const Scalar _tmp8 = _tmp7 * state(2, 0);
-  const Scalar _tmp9 = _tmp1 * state(0, 0);
-  const Scalar _tmp10 = _tmp8 + _tmp9;
-  const Scalar _tmp11 = 2 * state(2, 0);
-  const Scalar _tmp12 = -_tmp11 * state(0, 0) + _tmp7 * state(3, 0);
-  const Scalar _tmp13 = _tmp0 * _tmp10 + _tmp12 * state(6, 0) + _tmp5 * _tmp6;
+  const Scalar _tmp6 = 2 * state(0, 0);
+  const Scalar _tmp7 = _tmp6 * state(3, 0);
+  const Scalar _tmp8 = 2 * state(2, 0);
+  const Scalar _tmp9 = _tmp8 * state(1, 0);
+  const Scalar _tmp10 = _tmp7 + _tmp9;
+  const Scalar _tmp11 = -state(23, 0) + state(5, 0);
+  const Scalar _tmp12 = _tmp1 * state(3, 0) - _tmp8 * state(0, 0);
+  const Scalar _tmp13 = _tmp0 * _tmp5 + _tmp10 * _tmp11 + _tmp12 * state(6, 0);
   const Scalar _tmp14 = _tmp13 + epsilon * ((((_tmp13) > 0) - ((_tmp13) < 0)) + Scalar(0.5));
-  const Scalar _tmp15 = std::pow(_tmp14, Scalar(2));
-  const Scalar _tmp16 = _tmp4 - 2 * std::pow(state(1, 0), Scalar(2));
-  const Scalar _tmp17 = _tmp8 - _tmp9;
-  const Scalar _tmp18 = _tmp11 * state(3, 0) + _tmp7 * state(0, 0);
-  const Scalar _tmp19 = _tmp0 * _tmp16 + _tmp17 * _tmp6 + _tmp18 * state(6, 0);
-  const Scalar _tmp20 = _tmp19 / _tmp15;
-  const Scalar _tmp21 = _tmp7 * state(6, 0);
-  const Scalar _tmp22 = Scalar(1.0) / (_tmp14);
-  const Scalar _tmp23 = _tmp15 / (_tmp15 + std::pow(_tmp19, Scalar(2)));
+  const Scalar _tmp15 = Scalar(1.0) / (_tmp14);
+  const Scalar _tmp16 = _tmp2 * state(0, 0);
+  const Scalar _tmp17 = std::pow(_tmp14, Scalar(2));
+  const Scalar _tmp18 = _tmp4 - 2 * std::pow(state(1, 0), Scalar(2));
+  const Scalar _tmp19 = -_tmp7 + _tmp9;
+  const Scalar _tmp20 = _tmp6 * state(1, 0) + _tmp8 * state(3, 0);
+  const Scalar _tmp21 = _tmp0 * _tmp19 + _tmp11 * _tmp18 + _tmp20 * state(6, 0);
+  const Scalar _tmp22 = _tmp21 / _tmp17;
+  const Scalar _tmp23 = _tmp17 / (_tmp17 + std::pow(_tmp21, Scalar(2)));
   const Scalar _tmp24 = (Scalar(1) / Scalar(2)) * _tmp23;
-  const Scalar _tmp25 =
-      _tmp24 * (-_tmp20 * (_tmp0 * _tmp1 - _tmp3) + _tmp22 * (-_tmp1 * _tmp6 + _tmp21));
-  const Scalar _tmp26 = 4 * _tmp6;
-  const Scalar _tmp27 = _tmp2 * state(0, 0);
-  const Scalar _tmp28 = _tmp2 * state(3, 0);
-  const Scalar _tmp29 = _tmp24 * (-_tmp20 * (_tmp0 * _tmp7 - _tmp26 * state(2, 0) - _tmp27) +
-                                  _tmp22 * (_tmp28 + _tmp6 * _tmp7));
-  const Scalar _tmp30 = 4 * _tmp0;
-  const Scalar _tmp31 = _tmp24 * (-_tmp20 * (_tmp0 * _tmp11 + _tmp28) +
-                                  _tmp22 * (_tmp11 * _tmp6 + _tmp27 - _tmp30 * state(1, 0)));
-  const Scalar _tmp32 = 2 * state(0, 0);
-  const Scalar _tmp33 = _tmp24 * (-_tmp20 * (_tmp0 * _tmp32 + _tmp21 - _tmp26 * state(3, 0)) +
-                                  _tmp22 * (_tmp3 - _tmp30 * state(3, 0) - _tmp32 * _tmp6));
-  const Scalar _tmp34 = _tmp17 * _tmp22;
-  const Scalar _tmp35 = _tmp20 * _tmp5;
-  const Scalar _tmp36 = _tmp16 * _tmp22;
-  const Scalar _tmp37 = _tmp10 * _tmp20;
+  const Scalar _tmp25 = _tmp24 * (_tmp15 * (_tmp0 * _tmp1 + _tmp3) -
+                                  _tmp22 * (-4 * _tmp0 * state(2, 0) + _tmp1 * _tmp11 - _tmp16));
+  const Scalar _tmp26 = 2 * state(3, 0);
+  const Scalar _tmp27 = _tmp2 * state(1, 0);
+  const Scalar _tmp28 = _tmp2 * state(2, 0);
+  const Scalar _tmp29 =
+      _tmp24 * (_tmp15 * (-_tmp0 * _tmp26 + _tmp27) - _tmp22 * (_tmp11 * _tmp26 - _tmp28));
+  const Scalar _tmp30 = _tmp24 * (_tmp15 * (_tmp0 * _tmp8 - 4 * _tmp11 * state(1, 0) + _tmp16) -
+                                  _tmp22 * (_tmp11 * _tmp8 + _tmp3));
+  const Scalar _tmp31 = 4 * state(3, 0);
+  const Scalar _tmp32 = _tmp24 * (_tmp15 * (-_tmp0 * _tmp6 - _tmp11 * _tmp31 + _tmp28) -
+                                  _tmp22 * (-_tmp0 * _tmp31 + _tmp11 * _tmp6 + _tmp27));
+  const Scalar _tmp33 = _tmp22 * _tmp5;
+  const Scalar _tmp34 = _tmp15 * _tmp19;
+  const Scalar _tmp35 = _tmp15 * _tmp18;
+  const Scalar _tmp36 = _tmp10 * _tmp22;
 
   // Output terms (1)
   matrix::Matrix<Scalar, 24, 1> _res;
@@ -79,16 +78,16 @@ matrix::Matrix<Scalar, 24, 1> ComputeSideslipH(const matrix::Matrix<Scalar, 25, 
   _res.setZero();
 
   _res(0, 0) =
-      -_tmp25 * state(1, 0) - _tmp29 * state(3, 0) + _tmp31 * state(0, 0) + _tmp33 * state(2, 0);
+      -_tmp25 * state(3, 0) - _tmp29 * state(1, 0) + _tmp30 * state(0, 0) + _tmp32 * state(2, 0);
   _res(1, 0) =
-      -_tmp25 * state(2, 0) + _tmp29 * state(0, 0) + _tmp31 * state(3, 0) - _tmp33 * state(1, 0);
+      _tmp25 * state(0, 0) - _tmp29 * state(2, 0) + _tmp30 * state(3, 0) - _tmp32 * state(1, 0);
   _res(2, 0) =
-      -_tmp25 * state(3, 0) + _tmp29 * state(1, 0) - _tmp31 * state(2, 0) + _tmp33 * state(0, 0);
-  _res(3, 0) = _tmp23 * (_tmp34 - _tmp35);
-  _res(4, 0) = _tmp23 * (_tmp36 - _tmp37);
-  _res(5, 0) = _tmp23 * (-_tmp12 * _tmp20 + _tmp18 * _tmp22);
-  _res(21, 0) = _tmp23 * (-_tmp34 + _tmp35);
-  _res(22, 0) = _tmp23 * (-_tmp36 + _tmp37);
+      _tmp25 * state(1, 0) - _tmp29 * state(3, 0) - _tmp30 * state(2, 0) + _tmp32 * state(0, 0);
+  _res(3, 0) = _tmp23 * (-_tmp33 + _tmp34);
+  _res(4, 0) = _tmp23 * (_tmp35 - _tmp36);
+  _res(5, 0) = _tmp23 * (-_tmp12 * _tmp22 + _tmp15 * _tmp20);
+  _res(21, 0) = _tmp23 * (_tmp33 - _tmp34);
+  _res(22, 0) = _tmp23 * (-_tmp35 + _tmp36);
 
   return _res;
 }  // NOLINT(readability/fn_size)
