@@ -285,6 +285,7 @@ struct parameters {
 	// AI-predicted per-axis IMU noise (overrides gyro_noise / accel_noise when non-zero)
 	float ai_acc_noise[3]{0.f, 0.f, 0.f}; ///< AI-predicted accel noise XYZ (m/s^2); 0 = use accel_noise fallback
 	float ai_gyro_noise[3]{0.f, 0.f, 0.f};  ///< AI-predicted gyro  noise XYZ (rad/s); 0 = use gyro_noise fallback
+	uint64_t ai_imu_noise_timestamp_us{0};  ///< timestamp of latest AI IMU noise sample (uSec)
 
 
 	// process noise

@@ -46,7 +46,11 @@
 
 #include <math.h>
 #include <mathlib/mathlib.h>
+#include <px4_log.h>
 
+#ifndef MODULE_NAME
+#define MODULE_NAME "ekf2"
+#endif
 // Sets initial values for the covariance matrix
 // Do not call before quaternion states have been initialised
 void Ekf::initialiseCovariance()
@@ -123,12 +127,18 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	float accel_noise = _params.accel_noise;
 	Vector3f accel_var;
 
+	constexpr int64_t kAiImuNoiseTimeoutUs = 100000;
+	// Compare against latest IMU time to avoid delayed horizon masking fresh AI data
+	const int64_t ai_noise_age_us = static_cast<int64_t>(_time_latest_us)
+					 - static_cast<int64_t>(_params.ai_imu_noise_timestamp_us);
+	const bool ai_noise_fresh = (ai_noise_age_us >= 0) && (ai_noise_age_us <= kAiImuNoiseTimeoutUs);
+
 	bool ai_gyro_override = false;
 	bool ai_acc_override = false;
 
 	for (unsigned i = 0; i < 3; i++) {
-		if (_params.ai_gyro_noise[i] > 0.f) {
-			gyro_var(i) = sq(_params.ai_gyro_noise[i] * 10000.f);
+		if (ai_noise_fresh && (_params.ai_gyro_noise[i] > 0.f)) {
+			gyro_var(i) = sq(sqrtf(_params.ai_gyro_noise[i]));
 			ai_gyro_override = true;
 
 		} else {
@@ -138,8 +148,8 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 		if (_fault_status.flags.bad_acc_vertical || imu_delayed.delta_vel_clipping[i]) {
 			accel_var(i) = sq(BADACC_BIAS_PNOISE);
 
-		} else if (_params.ai_acc_noise[i] > 0.f) {
-			accel_var(i) = sq(_params.ai_acc_noise[i] * 350.f);
+		} else if (ai_noise_fresh && (_params.ai_acc_noise[i] > 0.f)) {
+			accel_var(i) = sq(sqrtf(_params.ai_acc_noise[i]));
 			ai_acc_override = true;
 
 		} else {
@@ -154,7 +164,8 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	static uint32_t print_counter = 0;
 	if (++print_counter >= 500) {
 		print_counter = 0;
-		PX4_INFO("AI_Gyro_Override: %s,  AI_Acc_Override: %s,  dt=%.6f",// dt = 0.008
+		PX4_INFO("AI_Fresh: %s, AI_Gyro_Override: %s, AI_Acc_Override: %s, dt=%.6f",// dt = 0.008
+			ai_noise_fresh ? "yes" : "no",
 			ai_gyro_override ? "ACTIVE" : "inactive",
 			ai_acc_override  ? "ACTIVE" : "inactive", (double)dt);
 		PX4_INFO("AI_gyro_noise=[%.3e %.3e %.3e]",

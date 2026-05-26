@@ -731,13 +731,14 @@ void EKF2::Run()
 
 		if (_ai_imu_noise_sub.copy(&noise)) {
 			// Write AI-predicted per-axis noise into the EKF params struct so
-			// covariance.cpp can read them via _params.ai_accel_noise / ai_gyro_noise
+			// covariance.cpp can read them via _params.ai_acc_noise / ai_gyro_noise
 			_params->ai_acc_noise[0] = noise.ai_acc_noise[0];
 			_params->ai_acc_noise[1] = noise.ai_acc_noise[1];
 			_params->ai_acc_noise[2] = noise.ai_acc_noise[2];
 			_params->ai_gyro_noise[0]  = noise.ai_gyro_noise[0];
 			_params->ai_gyro_noise[1]  = noise.ai_gyro_noise[1];
 			_params->ai_gyro_noise[2]  = noise.ai_gyro_noise[2];
+			_params->ai_imu_noise_timestamp_us = noise.timestamp;
 		}
 	}
 
