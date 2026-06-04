@@ -44,6 +44,7 @@
 #define EKF_EKF_H
 
 #include "estimator_interface.h"
+#include <drivers/drv_hrt.h>
 
 #if defined(CONFIG_EKF2_GNSS)
 # include "yaw_estimator/EKFGSF_yaw.h"

@@ -127,12 +127,12 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	float accel_noise = _params.accel_noise;
 	Vector3f accel_var;
 
-	constexpr int64_t kAiImuNoiseTimeoutUs = 100000;
-	// Compare against latest IMU time to avoid delayed horizon masking fresh AI data
-	const int64_t ai_noise_age_us = static_cast<int64_t>(_time_latest_us)
-					 - static_cast<int64_t>(_params.ai_imu_noise_timestamp_us);
-	const bool ai_noise_fresh = (ai_noise_age_us >= 0) && (ai_noise_age_us <= kAiImuNoiseTimeoutUs);
-
+	constexpr uint64_t kAiImuNoiseTimeoutUs = 100000;
+	// Compare against current time (ai_imu_noise_timestamp_us is based on hrt_absolute_time)
+	const uint64_t ai_noise_age_us = hrt_absolute_time() - _params.ai_imu_noise_timestamp_us;
+	const bool ai_noise_fresh = (ai_noise_age_us <= kAiImuNoiseTimeoutUs);
+	PX4_INFO("AI noise age: %lld us, fresh: %s", static_cast<long long>(ai_noise_age_us),
+		 ai_noise_fresh ? "yes" : "no");
 	bool ai_gyro_override = false;
 	bool ai_acc_override = false;
 

@@ -739,6 +739,8 @@ void EKF2::Run()
 			_params->ai_gyro_noise[1]  = noise.ai_gyro_noise[1];
 			_params->ai_gyro_noise[2]  = noise.ai_gyro_noise[2];
 			_params->ai_imu_noise_timestamp_us = noise.timestamp;
+			// Use arrival time on the EKF side to avoid external timestamp dependencies.
+			// _params->ai_imu_noise_timestamp_us = hrt_absolute_time();
 		}
 	}
 
