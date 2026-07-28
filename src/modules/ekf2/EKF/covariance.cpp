@@ -137,7 +137,10 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	bool ai_acc_override = false;
 
 	for (unsigned i = 0; i < 3; i++) {
-		if (ai_noise_fresh && (_params.ai_gyro_noise[i] > 0.f)) {
+		// Keep Z-axis on default process noise, only allow AI overrides on XY.
+		const bool allow_ai_override_axis = (i < 2);
+
+		if (allow_ai_override_axis && ai_noise_fresh && (_params.ai_gyro_noise[i] > 0.f)) {
 			gyro_var(i) = sq(sqrtf(_params.ai_gyro_noise[i]));
 			ai_gyro_override = true;
 
@@ -148,7 +151,7 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 		if (_fault_status.flags.bad_acc_vertical || imu_delayed.delta_vel_clipping[i]) {
 			accel_var(i) = sq(BADACC_BIAS_PNOISE);
 
-		} else if (ai_noise_fresh && (_params.ai_acc_noise[i] > 0.f)) {
+		} else if (allow_ai_override_axis && ai_noise_fresh && (_params.ai_acc_noise[i] > 0.f)) {
 			accel_var(i) = sq(sqrtf(_params.ai_acc_noise[i]));
 			ai_acc_override = true;
 
