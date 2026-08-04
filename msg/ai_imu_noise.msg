@@ -7,5 +7,5 @@
 
 uint64 timestamp                # time since system start (microseconds)
 
-float32[3] ai_acc_noise          # AI-predicted accelerometer noise XYZ (m/s^2)  [0]=X [1]=Y [2]=Z
-float32[3] ai_gyro_noise         # AI-predicted gyroscope noise XYZ    (rad/s)   [0]=X [1]=Y [2]=Z
+float32[3] ai_acc_noise          # AI-predicted accelerometer noise XYZ (m/s^2)^s  [0]=X [1]=Y [2]=Z
+float32[3] ai_gyro_noise         # AI-predicted gyroscope noise XYZ    (rad/s)^2   [0]=X [1]=Y [2]=Z
