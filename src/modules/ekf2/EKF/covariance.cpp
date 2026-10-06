@@ -127,28 +127,45 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	float accel_noise = _params.accel_noise;
 	Vector3f accel_var;
 
-	// Enter/exit thresholds add hysteresis and prevent fresh/stale flapping near timeout.
-	// Exit threshold raised to 1.5s to absorb brief AI_IMU_NOISE transport stalls
-	// (e.g. mavros plugin reconfiguration during a Vicon topic switch via rosservice)
-	// without falsely latching stale and triggering EKF covariance growth / failsafe.
+	// Start using AI noise only when the latest sample is at most 100 ms old.
 	constexpr uint64_t kAiImuNoiseFreshEnterUs = 100000;
-	constexpr uint64_t kAiImuNoiseFreshExitUs = 350000;
-	const uint64_t ai_noise_age_us = hrt_absolute_time() - _params.ai_imu_noise_timestamp_us;
-	_ai_noise_age_us_uorb = ai_noise_age_us;
-	static bool ai_noise_fresh_latched = false;
+	// After starting, keep using it for up to 700 ms while waiting for the next sample.
+	constexpr uint64_t kAiImuNoiseFreshExitUs = 700000;
 
-	if (ai_noise_fresh_latched) {
+	// The timestamp remains zero until the first AI noise sample arrives.
+	const uint64_t now_us = hrt_absolute_time();
+	const bool ai_noise_sample_received = (_params.ai_imu_noise_timestamp_us != 0)
+			&& (_params.ai_imu_noise_timestamp_us <= now_us);
+
+	// Before the first sample, report zero instead of counting from system startup.
+	// After a sample arrives, this is the time spent waiting for a newer sample.
+	const uint64_t ai_noise_age_us = ai_noise_sample_received
+			? now_us - _params.ai_imu_noise_timestamp_us
+			: 0;
+	_ai_noise_age_us_uorb = ai_noise_age_us;
+
+	// Remember whether AI noise is currently in use so small timing changes do not
+	// repeatedly switch it on and off near the age limit.
+	static bool ai_noise_is_in_use = false;
+
+	if (!ai_noise_sample_received) {
+		// No sample has arrived yet, so use the normal EKF noise values.
+		ai_noise_is_in_use = false;
+
+	} else if (ai_noise_is_in_use) {
+		// Stop using AI noise when no new sample has arrived for more than 350 ms.
 		if (ai_noise_age_us > kAiImuNoiseFreshExitUs) {
-			ai_noise_fresh_latched = false;
+			ai_noise_is_in_use = false;
 		}
 
 	} else {
+		// Start using AI noise when a recent sample is available.
 		if (ai_noise_age_us <= kAiImuNoiseFreshEnterUs) {
-			ai_noise_fresh_latched = true;
+			ai_noise_is_in_use = true;
 		}
 	}
 
-	const bool ai_noise_fresh = ai_noise_fresh_latched;
+	const bool ai_noise_fresh = ai_noise_is_in_use;
 
 	PX4_INFO("AI noise age: %lld us, fresh: %s", static_cast<long long>(ai_noise_age_us),
 		 ai_noise_fresh ? "yes" : "no");
