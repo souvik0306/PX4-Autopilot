@@ -1559,6 +1559,7 @@ void EKF2::PublishImuProcessNoise(const hrt_abstime &timestamp)
 {
 	ekf2_imu_process_noise_s imu_process_noise{};
 	imu_process_noise.timestamp_sample = _ekf.get_imu_sample_delayed().time_us;
+	imu_process_noise.ai_noise_age_us = _ekf.getAiNoiseAgeUs();
 	_ekf.getImuProcessNoiseVariance(imu_process_noise.gyro_var_uorb, imu_process_noise.accel_var_uorb);
 	imu_process_noise.timestamp = _replay_mode ? timestamp : hrt_absolute_time();
 	_ekf2_imu_process_noise_pub.publish(imu_process_noise);

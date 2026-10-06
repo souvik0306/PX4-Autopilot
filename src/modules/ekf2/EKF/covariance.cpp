@@ -134,6 +134,7 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	constexpr uint64_t kAiImuNoiseFreshEnterUs = 100000;
 	constexpr uint64_t kAiImuNoiseFreshExitUs = 350000;
 	const uint64_t ai_noise_age_us = hrt_absolute_time() - _params.ai_imu_noise_timestamp_us;
+	_ai_noise_age_us_uorb = ai_noise_age_us;
 	static bool ai_noise_fresh_latched = false;
 
 	if (ai_noise_fresh_latched) {
@@ -157,11 +158,8 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	bool ai_acc_override = false;
 
 	for (unsigned i = 0; i < 3; i++) {
-		// Allow AI gyro override on all axes, keep AI accel override on XY only.
-		const bool allow_ai_gyro_override_axis = true;
-		const bool allow_ai_acc_override_axis = (i < 2);
-
-		if (allow_ai_gyro_override_axis && ai_noise_fresh && (_params.ai_gyro_noise[i] > 0.f)) {
+		// AI gyro override is allowed on all three axes.
+		if (ai_noise_fresh && (_params.ai_gyro_noise[i] > 0.f)) {
 			gyro_var(i) = sq(sqrtf(_params.ai_gyro_noise[i]));
 			ai_gyro_override = true;
 
@@ -169,10 +167,11 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 			gyro_var(i) = sq(gyro_noise);
 		}
 
+		// AI accelerometer override is allowed on the X and Y axes only.
 		if (_fault_status.flags.bad_acc_vertical || imu_delayed.delta_vel_clipping[i]) {
 			accel_var(i) = sq(BADACC_BIAS_PNOISE);
 
-		} else if (allow_ai_acc_override_axis && ai_noise_fresh && (_params.ai_acc_noise[i] > 0.f)) {
+		} else if ((i < 2) && ai_noise_fresh && (_params.ai_acc_noise[i] > 0.f)) {
 			accel_var(i) = sq(sqrtf(_params.ai_acc_noise[i]));
 			ai_acc_override = true;
 
@@ -185,10 +184,6 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 	_gyro_var_uorb = Vector3f{gyro_var(0), gyro_var(1), gyro_var(2)};
 	_accel_var_uorb = Vector3f{accel_var(0), accel_var(1), accel_var(2)};
 
-	// NOTE: PX4_INFO messages are capped at 127 chars (incl. module prefix, see LogMessage.msg)
-	// and share a 4-deep uORB queue with every other module's log messages, so on overflow the
-	// oldest unread entry is dropped first. Print AI_status last so it's always the most recent
-	// entry and is the last one to get evicted.
 	static uint32_t print_counter = 0;
 	if (++print_counter >= 500) {
 		print_counter = 0;
@@ -196,20 +191,11 @@ void Ekf::predictCovariance(const imuSample &imu_delayed)
 			ai_noise_fresh ? "yes" : "no",
 			ai_gyro_override ? "ACTIVE" : "inactive",
 			ai_acc_override  ? "ACTIVE" : "inactive", (double)dt);
-		PX4_INFO("AI_gyro_noise=[%.3e %.3e %.3e]",
-			(double)_params.ai_gyro_noise[0],
-			(double)_params.ai_gyro_noise[1],
-			(double)_params.ai_gyro_noise[2]);
 
 		PX4_INFO("EKF_gyro_var=[%.3e %.3e %.3e]",
 			(double)gyro_var(0),
 			(double)gyro_var(1),
 			(double)gyro_var(2));
-
-		PX4_INFO("AI_accel_noise=[%.3e %.3e %.3e]",
-			(double)_params.ai_acc_noise[0],
-			(double)_params.ai_acc_noise[1],
-			(double)_params.ai_acc_noise[2]);
 
 		PX4_INFO("EKF_accel_var=[%.3e %.3e %.3e]",
 			(double)accel_var(0),

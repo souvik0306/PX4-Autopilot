@@ -274,6 +274,7 @@ public:
 		_gyro_var_uorb.copyTo(gyro_var_uorb);
 		_accel_var_uorb.copyTo(accel_var_uorb);
 	}
+	uint64_t getAiNoiseAgeUs() const { return _ai_noise_age_us_uorb; }
 
 
 	// accel bias
@@ -634,6 +635,7 @@ private:
 	float _ang_rate_magnitude_filt{0.0f};		///< angular rate magnitude after application of a decaying envelope filter (rad/sec)
 	Vector3f _gyro_var_uorb{};		///< latest gyro noise variances used for logging (rad/s)**2)
 	Vector3f _accel_var_uorb{};		///< latest accel noise variances used for logging ((m/sec)**2)**2
+	uint64_t _ai_noise_age_us_uorb{0};	///< AI noise sample age at covariance prediction (microseconds)
 
 	// imu fault status
 	uint64_t _time_bad_vert_accel{0};	///< last time a bad vertical accel was detected (uSec)
